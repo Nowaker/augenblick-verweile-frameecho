@@ -11,8 +11,14 @@ import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 
-class MediaSourceResolver(context: Context) {
+class MediaSourceResolver internal constructor(
+    context: Context,
+    /** Where a source's bytes are read from; see [OriginalMediaAccess]. */
+    private val readUriFor: (Uri) -> Uri
+) {
     private val context = context.applicationContext
+
+    constructor(context: Context) : this(context, { OriginalMediaAccess.readUri(context.applicationContext, it) })
 
     suspend fun resolve(uri: Uri): ResolvedMedia {
         var resolved: ResolvedMedia? = null
@@ -22,7 +28,10 @@ class MediaSourceResolver(context: Context) {
                 val coroutineContext = currentCoroutineContext()
                 val checkCancellation = { coroutineContext.ensureActive() }
                 checkCancellation()
+                // The picked URI stays the identity (name, type, sourceUri); only bytes are
+                // read through readUri, which may ask MediaStore for the unredacted original.
                 val name = sourceFileName(uri)
+                val readUri = readUriFor(uri)
                 fun extract(source: SourceData, video: EmbeddedVideo): ResolvedMedia {
                     val file = File.createTempFile("motion_photo_", ".mp4", context.cacheDir)
                     var retained = false
@@ -51,7 +60,7 @@ class MediaSourceResolver(context: Context) {
                     }
                 }
                 val mime = context.contentResolver.getType(uri)
-                val prefix = context.contentResolver.openInputStream(uri)?.use { input ->
+                val prefix = context.contentResolver.openInputStream(readUri)?.use { input ->
                     val buffer = ByteArray(4096)
                     var count = 0
                     while (count < buffer.size) {
@@ -65,13 +74,13 @@ class MediaSourceResolver(context: Context) {
                 val jpeg = prefix.size >= 2 && prefix[0] == 0xff.toByte() && prefix[1] == 0xd8.toByte()
                 val iso = isIsoImage(prefix)
                 val picture = jpeg || mime?.startsWith("image/") == true || isStillSignature(prefix)
-                val value = if (picture || iso) SourceAccess(context, checkCancellation).read(uri) { source ->
+                val value = if (picture || iso) SourceAccess(context, checkCancellation).read(readUri) { source ->
                     val video = MotionPhotoParser(source, checkCancellation).parse()
                     if (video == null) {
                         if (picture) noVideo()
-                        ResolvedMedia(uri, uri, name)
+                        ResolvedMedia(readUri, uri, name)
                     } else extract(source, video)
-                } else ResolvedMedia(uri, uri, name)
+                } else ResolvedMedia(readUri, uri, name)
                 resolved = value
                 value
             }

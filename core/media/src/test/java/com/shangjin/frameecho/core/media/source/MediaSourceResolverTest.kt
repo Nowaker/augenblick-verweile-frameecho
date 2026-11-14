@@ -102,9 +102,36 @@ class MediaSourceResolverTest {
     }
 
     @Test
+    fun `original bytes are read through the read uri while the picked uri stays the identity`() = runBlocking {
+        val image = MotionPhotoFixtures.jpeg(MotionPhotoFixtures.legacy())
+        source.writeBytes(image + MotionPhotoFixtures.video)
+        // The redacted view (picked uri) must never be read once an original is available.
+        every { contentResolver.openInputStream(uri) } throws AssertionError("read the redacted uri")
+        val original = mockk<Uri> {
+            every { scheme } returns "file"
+            every { path } answers { source.absolutePath }
+        }
+        every { contentResolver.openInputStream(original) } answers { source.inputStream() }
+
+        val motion = MediaSourceResolver(context) { original }.resolve(uri)
+        assertSame(uri, motion.sourceUri)
+        assertEquals(source.name, motion.sourceFileName)
+        assertEquals(image.size.toLong(), motion.originalImageLength)
+        motion.release()
+
+        source.writeBytes(MotionPhotoFixtures.video)
+        every { contentResolver.getType(uri) } returns "video/mp4"
+        val video = MediaSourceResolver(context) { original }.resolve(uri)
+        assertSame(uri, video.sourceUri)
+        assertSame(original, video.videoUri)
+        video.release()
+    }
+
+    @Test
     fun `provider display name survives standalone resolution`() = runBlocking {
         source.writeBytes(MotionPhotoFixtures.video)
         every { uri.scheme } returns "content"
+        every { uri.authority } returns "com.example.files"
         every { contentResolver.getType(uri) } returns "video/mp4"
         val cursor = mockk<Cursor>(relaxed = true)
         every { contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) } returns cursor
