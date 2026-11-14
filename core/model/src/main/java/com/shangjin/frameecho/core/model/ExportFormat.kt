@@ -14,5 +14,11 @@ enum class ExportFormat(
         mimeType = "image/jpeg",
         supportsAlpha = false,
         supportsHdr = false
+    ),
+    HEIC(
+        extension = "heic",
+        mimeType = "image/heic",
+        supportsAlpha = false,
+        supportsHdr = false
     )
 }

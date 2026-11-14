@@ -1,10 +1,9 @@
 package com.shangjin.frameecho.core.media.export
 
 import android.annotation.SuppressLint
-import android.content.ContentResolver
-import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.AudioFormat
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
@@ -16,19 +15,16 @@ import android.net.Uri
 import android.os.Build
 import com.shangjin.frameecho.core.media.utils.getIntegerOrNullSafe
 import com.shangjin.frameecho.core.media.utils.getLongOrNullSafe
-import android.os.Environment
-import android.provider.DocumentsContract
-import android.provider.MediaStore
 import androidx.annotation.RequiresApi
-import androidx.documentfile.provider.DocumentFile
 import androidx.core.graphics.scale
 import com.shangjin.frameecho.core.media.colorspace.HdrToneMapper
 import com.shangjin.frameecho.core.media.metadata.MetadataWriter
+import com.shangjin.frameecho.core.media.metadata.exportMetadata
+import com.shangjin.frameecho.core.model.CaptureTime
+import com.shangjin.frameecho.core.model.ExportFileName
 import com.shangjin.frameecho.core.media.utils.LogUtils
-import com.shangjin.frameecho.core.media.utils.DateTimeUtils
 import com.shangjin.frameecho.core.model.CapturedFrame
 import com.shangjin.frameecho.core.model.ExportConfig
-import com.shangjin.frameecho.core.model.ExportDirectory
 import com.shangjin.frameecho.core.model.ExportFormat
 import com.shangjin.frameecho.core.model.ExportResult
 import com.shangjin.frameecho.core.model.VideoMetadata
@@ -41,20 +37,19 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 
 /**
- * Exports captured frames as images with full metadata and color space handling.
+ * Exports captured frames with safe available metadata and color space handling.
  *
  * Supports:
- * - Static image export (JPEG, PNG, WebP)
+ * - Static image export (JPEG, HEIC)
  * - Motion photo export (Google Motion Photo format)
  * - HDR tone mapping for SDR formats
- * - Full EXIF metadata preservation
+ * - Safe source EXIF metadata preservation
  * - MediaStore integration for gallery visibility
  */
 class FrameExporter(private val context: Context) {
 
     companion object {
         private const val XMP_NAMESPACE_URI = "http://ns.adobe.com/xap/1.0/\u0000"
-        private const val DEFAULT_CUSTOM_FILENAME = "FrameEcho"
 
         // AAC transcoding for audio codecs MediaMuxer cannot embed in MP4
         // (LPCM from Sony/Canon cameras, AC-3/E-AC-3, MP3, Opus, FLAC, ...).
@@ -72,6 +67,47 @@ class FrameExporter(private val context: Context) {
             MediaFormat.KEY_MAX_INPUT_SIZE
         )
         private val VALID_ROTATIONS = intArrayOf(0, 90, 180, 270)
+    }
+
+    /** Copy a resolver-validated Motion Photo primary still only at its cover PTS; never rewrite EXIF. */
+    suspend fun exportOriginalImage(
+        sourceUri: Uri,
+        imageLength: Long,
+        mimeType: String,
+        frame: CapturedFrame,
+        config: ExportConfig,
+        customExportTreeUri: Uri? = null
+    ): ExportResult = withContext(Dispatchers.IO) {
+        var temporary: java.io.File? = null
+        try {
+            require(config.originalImage && !config.motionPhoto) { "Select original still image export without Motion Photo export" }
+            require(frame.timestampUs == frame.metadata.dateTimePositionUs) { "Original image is available only at the Motion Photo cover timestamp" }
+            val original = OriginalImage.fromMimeType(imageLength, mimeType)
+            val staged = java.io.File.createTempFile("original_still_", ".image", context.cacheDir)
+            temporary = staged
+            val input = context.contentResolver.openInputStream(sourceUri) ?: throw java.io.IOException("Cannot open original Motion Photo")
+            input.use { source -> staged.outputStream().use { original.copy(source, it) } }
+            val dimensions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(staged.absolutePath, dimensions)
+            require(dimensions.outWidth > 0 && dimensions.outHeight > 0) { "Original still image cannot be decoded" }
+            val effectiveConfig = config.copy(format = original.format)
+            val fileName = generateFileName(frame, effectiveConfig)
+            val saved = ExportStorage(context).save(ExportDestination(
+                fileName, original.format, effectiveConfig, customExportTreeUri, CaptureTime.atFrame(frame.metadata, frame.timestampUs)
+            )) { output -> staged.inputStream().use { it.copyTo(output) } }
+            ExportResult.Success(
+                outputPath = saved.uri.toString(), width = dimensions.outWidth, height = dimensions.outHeight,
+                fileSizeBytes = imageLength, format = original.format, metadataPreserved = true,
+                requestedFormat = config.format.takeIf { it != original.format }, originalImagePreserved = true,
+                timestampWarnings = saved.timestampWarnings
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            ExportResult.Error("Original image export failed: ${failure.message ?: failure.javaClass.simpleName}", failure)
+        } finally {
+            temporary?.delete()
+        }
     }
 
     /**
@@ -98,8 +134,8 @@ class FrameExporter(private val context: Context) {
         var softBitmap: Bitmap? = null
         var processedBitmap: Bitmap? = null
         var finalBitmap: Bitmap? = null
-        var outputUri: Uri? = null
         try {
+            require(!config.originalImage) { "Original image export requires a Motion Photo cover and exportOriginalImage" }
             // Ensure we have a software bitmap (HARDWARE bitmaps can't be compressed)
             softBitmap = ensureSoftwareBitmap(bitmap)
 
@@ -118,32 +154,23 @@ class FrameExporter(private val context: Context) {
             // Generate output file
             val fileName = generateFileName(frame, config)
 
-            // Save to MediaStore or custom directory (scoped storage compatible)
-            val dateTakenMs = frame.metadata.dateTime?.let { DateTimeUtils.parseToMillis(it) }
-            val savedUri = if (customExportTreeUri != null) {
-                saveToCustomDirectory(finalBitmap, fileName, config, customExportTreeUri)
-            } else {
-                saveToMediaStore(finalBitmap, fileName, config, dateTakenMs)
+            val metadata = frame.exportMetadata(resultWidth, resultHeight)
+            ImageEncoder(context).encode(finalBitmap, config, metadata).use { encoded ->
+                val saved = ExportStorage(context).save(ExportDestination(
+                    fileName, config.format, config, customExportTreeUri, CaptureTime.parse(metadata.dateTime)
+                )) { output -> encoded.file.inputStream().use { it.copyTo(output) } }
+                ExportResult.Success(
+                    outputPath = saved.uri.toString(),
+                    width = resultWidth,
+                    height = resultHeight,
+                    fileSizeBytes = saved.size,
+                    format = config.format,
+                    isMotionPhoto = false,
+                    metadataPreserved = encoded.metadataPreserved,
+                    timestampWarnings = saved.timestampWarnings
+                )
             }
-            outputUri = savedUri
-
-            // Write metadata
-            var metadataPreserved = false
-            if (config.preserveMetadata) {
-                metadataPreserved = writeMetadataToUri(savedUri, frame.metadata)
-            }
-
-            ExportResult.Success(
-                outputPath = savedUri.toString(),
-                width = resultWidth,
-                height = resultHeight,
-                fileSizeBytes = getFileSize(savedUri),
-                format = config.format,
-                isMotionPhoto = false,
-                metadataPreserved = metadataPreserved
-            )
         } catch (e: CancellationException) {
-            outputUri?.let { cleanupFailedOutput(it) }
             throw e
         } catch (e: OutOfMemoryError) {
             ExportResult.Error("Image too large to process. Try reducing resolution or using JPEG format.", e)
@@ -182,8 +209,8 @@ class FrameExporter(private val context: Context) {
         var softBitmap: Bitmap? = null
         var processedBitmap: Bitmap? = null
         var finalBitmap: Bitmap? = null
-        var outputUri: Uri? = null
         try {
+            require(!config.originalImage) { "An original still image cannot be exported as a new Motion Photo" }
             val effectiveConfig = config
             softBitmap = ensureSoftwareBitmap(bitmap)
 
@@ -205,8 +232,9 @@ class FrameExporter(private val context: Context) {
             // Step 1: Write EXIF metadata to JPEG bytes FIRST (before XMP injection).
             // ExifInterface.saveAttributes() rewrites the entire JPEG — doing this on
             // a plain JPEG avoids any risk of corrupting the XMP we inject later.
+            val metadata = frame.exportMetadata(resultWidth, resultHeight)
             val (exifJpegBytes, metadataPreserved) = if (config.preserveMetadata) {
-                writeExifToJpegBytes(jpegBytes, frame.metadata)
+                writeExifToJpegBytes(jpegBytes, metadata)
             } else {
                 Pair(jpegBytes, false)
             }
@@ -252,30 +280,29 @@ class FrameExporter(private val context: Context) {
                 )
 
                 // Step 4: Write combined JPEG+video to storage
-                val dateTakenMs = frame.metadata.dateTime?.let { DateTimeUtils.parseToMillis(it) }
-                val savedUri = if (customExportTreeUri != null) {
-                    saveMotionPhotoToCustomDirectory(xmpJpegBytes, videoClipFile, fileName, customExportTreeUri)
-                } else {
-                    saveMotionPhotoToMediaStore(xmpJpegBytes, videoClipFile, fileName, effectiveConfig, dateTakenMs)
+                val saved = ExportStorage(context).save(ExportDestination(
+                    fileName, ExportFormat.JPEG, config, customExportTreeUri, CaptureTime.parse(metadata.dateTime)
+                )) { output ->
+                    output.write(xmpJpegBytes)
+                    videoClipFile.inputStream().use { it.copyTo(output, 65536) }
                 }
-                outputUri = savedUri
 
                 ExportResult.Success(
-                    outputPath = savedUri.toString(),
+                    outputPath = saved.uri.toString(),
                     width = resultWidth,
                     height = resultHeight,
-                    fileSizeBytes = getFileSize(savedUri),
-                    format = effectiveConfig.format,
+                    fileSizeBytes = saved.size,
+                    format = ExportFormat.JPEG,
                     isMotionPhoto = true,
                     metadataPreserved = metadataPreserved,
-                    requestedFormat = null,
-                    audioDropped = !config.muteAudio && clipResult.hasAudioTrack && !clipResult.audioIncluded
+                    requestedFormat = config.format.takeIf { it != ExportFormat.JPEG },
+                    audioDropped = !config.muteAudio && clipResult.hasAudioTrack && !clipResult.audioIncluded,
+                    timestampWarnings = saved.timestampWarnings
                 )
             } finally {
                 videoClipFile.delete()
             }
         } catch (e: CancellationException) {
-            outputUri?.let { cleanupFailedOutput(it) }
             throw e
         } catch (e: OutOfMemoryError) {
             ExportResult.Error("Image too large to process. Try reducing resolution or using JPEG format.", e)
@@ -1342,202 +1369,6 @@ class FrameExporter(private val context: Context) {
     }
 
     /**
-     * Save motion photo to MediaStore using streaming to avoid OOM.
-     */
-    internal fun saveMotionPhotoToMediaStore(
-        jpegBytes: ByteArray,
-        videoFile: java.io.File,
-        fileName: String,
-        config: ExportConfig,
-        dateTakenMs: Long? = null
-    ): Uri {
-        val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
-            put(MediaStore.Images.Media.MIME_TYPE, ExportFormat.JPEG.mimeType)
-            dateTakenMs?.let { put(MediaStore.Images.Media.DATE_TAKEN, it) }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, config.exportDirectory.relativePath)
-                put(MediaStore.Images.Media.IS_PENDING, 1)
-            } else {
-                put(MediaStore.Images.Media.DATA, resolveLegacyOutputFile(fileName, config.exportDirectory).absolutePath)
-            }
-        }
-
-        val uri = context.contentResolver.insert(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            values
-        ) ?: throw java.io.IOException("Failed to create MediaStore entry — storage may be full or unavailable")
-
-        try {
-            val outputStream = context.contentResolver.openOutputStream(uri)
-                ?: throw java.io.IOException("Failed to open output stream for MediaStore entry")
-            outputStream.use { os ->
-                os.write(jpegBytes)
-
-                if (videoFile.exists() && videoFile.length() > 0) {
-                    java.io.FileInputStream(videoFile).use { inputStream ->
-                        inputStream.copyTo(os, 65536)
-                    }
-                }
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                values.clear()
-                values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                context.contentResolver.update(uri, values, null, null)
-            }
-
-            return uri
-        } catch (e: Exception) {
-            try { context.contentResolver.delete(uri, null, null) } catch (deleteException: Exception) { LogUtils.w(context, "FrameExporter", "Failed to delete URI after export failure", deleteException) }
-            throw e
-        }
-    }
-
-    /**
-     * Save bitmap to MediaStore for scoped storage compatibility.
-     */
-    private fun saveToMediaStore(
-        bitmap: Bitmap,
-        fileName: String,
-        config: ExportConfig,
-        dateTakenMs: Long? = null
-    ): Uri {
-        val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
-            put(MediaStore.Images.Media.MIME_TYPE, config.format.mimeType)
-            dateTakenMs?.let { put(MediaStore.Images.Media.DATE_TAKEN, it) }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, config.exportDirectory.relativePath)
-                put(MediaStore.Images.Media.IS_PENDING, 1)
-            } else {
-                put(MediaStore.Images.Media.DATA, resolveLegacyOutputFile(fileName, config.exportDirectory).absolutePath)
-            }
-        }
-
-        val uri = context.contentResolver.insert(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            values
-        ) ?: throw java.io.IOException("Failed to create MediaStore entry — storage may be full or unavailable")
-
-        try {
-            val outputStream = context.contentResolver.openOutputStream(uri)
-                ?: throw java.io.IOException("Failed to open output stream for MediaStore entry")
-            outputStream.use {
-                val compressFormat = config.format.toCompressFormat(config.quality)
-                if (!bitmap.compress(compressFormat, config.quality, it)) {
-                    throw java.io.IOException("Failed to compress bitmap (format: ${config.format}, config: ${bitmap.config})")
-                }
-            }
-
-            // Mark as not pending
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                values.clear()
-                values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                context.contentResolver.update(uri, values, null, null)
-            }
-
-            return uri
-        } catch (e: Exception) {
-            try { context.contentResolver.delete(uri, null, null) } catch (deleteException: Exception) { LogUtils.w(context, "FrameExporter", "Failed to delete URI after export failure", deleteException) }
-            throw e
-        }
-    }
-
-    /**
-     * Save bitmap to a custom directory using SAF (DocumentFile).
-     */
-    private fun saveToCustomDirectory(
-        bitmap: Bitmap,
-        fileName: String,
-        config: ExportConfig,
-        treeUri: Uri
-    ): Uri {
-        val tree = DocumentFile.fromTreeUri(context, treeUri)
-            ?: throw java.io.IOException("Failed to access custom directory — permission may have been revoked")
-        val docFile = tree.createFile(config.format.mimeType, fileName)
-            ?: throw java.io.IOException("Failed to create file in custom directory")
-        val uri = validateCustomDocumentUri(docFile.uri, treeUri)
-        try {
-            val outputStream = context.contentResolver.openOutputStream(uri)
-                ?: throw java.io.IOException("Failed to open output stream for custom directory")
-            outputStream.use {
-                val compressFormat = config.format.toCompressFormat(config.quality)
-                if (!bitmap.compress(compressFormat, config.quality, it)) {
-                    throw java.io.IOException("Failed to compress bitmap (format: ${config.format}, config: ${bitmap.config})")
-                }
-            }
-            return uri
-        } catch (e: Exception) {
-            try { DocumentsContract.deleteDocument(context.contentResolver, uri) } catch (deleteException: Exception) { LogUtils.w(context, "FrameExporter", "Failed to delete file after export failure", deleteException) }
-            throw e
-        }
-    }
-
-    /**
-     * Save motion photo to a custom directory using SAF (DocumentFile).
-     */
-    private fun saveMotionPhotoToCustomDirectory(
-        jpegBytes: ByteArray,
-        videoFile: java.io.File,
-        fileName: String,
-        treeUri: Uri
-    ): Uri {
-        val tree = DocumentFile.fromTreeUri(context, treeUri)
-            ?: throw java.io.IOException("Failed to access custom directory — permission may have been revoked")
-        val docFile = tree.createFile(ExportFormat.JPEG.mimeType, fileName)
-            ?: throw java.io.IOException("Failed to create file in custom directory")
-        val uri = validateCustomDocumentUri(docFile.uri, treeUri)
-        try {
-            val outputStream = context.contentResolver.openOutputStream(uri)
-                ?: throw java.io.IOException("Failed to open output stream for custom directory")
-            outputStream.use { os ->
-                os.write(jpegBytes)
-                if (videoFile.exists() && videoFile.length() > 0) {
-                    java.io.FileInputStream(videoFile).use { inputStream ->
-                        inputStream.copyTo(os, 65536)
-                    }
-                }
-            }
-            return uri
-        } catch (e: Exception) {
-            try { DocumentsContract.deleteDocument(context.contentResolver, uri) } catch (deleteException: Exception) { LogUtils.w(context, "FrameExporter", "Failed to delete file after export failure", deleteException) }
-            throw e
-        }
-    }
-
-    private fun validateCustomDocumentUri(uri: Uri, treeUri: Uri): Uri {
-        // A provider can return an arbitrary URI from createDocument, including file://.
-        // Validate before opening it or attempting cleanup with the app's permissions.
-        if (uri.scheme != ContentResolver.SCHEME_CONTENT ||
-            uri.authority != treeUri.authority ||
-            !DocumentsContract.isDocumentUri(context, uri) ||
-            !DocumentsContract.isTreeUri(uri) ||
-            DocumentsContract.getTreeDocumentId(uri) != DocumentsContract.getTreeDocumentId(treeUri)
-        ) {
-            throw java.io.IOException("Custom directory provider returned an invalid document URI")
-        }
-        return uri
-    }
-
-    /**
-     * Write metadata to an image stored via MediaStore.
-     */
-    private fun writeMetadataToUri(uri: Uri, metadata: VideoMetadata): Boolean {
-        return try {
-            context.contentResolver.openFileDescriptor(uri, "rw")?.use { pfd ->
-                val exif = androidx.exifinterface.media.ExifInterface(pfd.fileDescriptor)
-                MetadataWriter.writeExifData(exif, metadata)
-                exif.saveAttributes()
-            }
-            true
-        } catch (e: Exception) {
-            LogUtils.w(context, "FrameExporter", "Failed to write metadata to URI", e)
-            false
-        }
-    }
-
-    /**
      * Write EXIF metadata into JPEG bytes via a temp file and return the enriched bytes.
      *
      * This must be used for motion photos because ExifInterface.saveAttributes() rewrites
@@ -1584,89 +1415,23 @@ class FrameExporter(private val context: Context) {
         config: ExportConfig,
         isMotion: Boolean = false
     ): String {
-        val extension = if (isMotion) ExportFormat.JPEG.extension else config.format.extension
-        val timestamp = System.currentTimeMillis()
-        val timeStr = frame.timestampUs / 1000 // Convert to ms
-
-        config.customFileName?.takeIf { it.isNotBlank() }?.let { custom ->
-            val baseName = sanitizeFileName(custom).substringBeforeLast('.')
-                .ifBlank { DEFAULT_CUSTOM_FILENAME }
-            return "${baseName}_${timestamp}_${timeStr}.${extension}"
-        }
-
-        val prefix = if (isMotion) "MVIMG" else "IMG"
-        return "${prefix}_${timestamp}_${timeStr}.${extension}"
+        return ExportFileName.generate(frame, config, System.currentTimeMillis(), isMotion)
     }
 
     internal fun sanitizeFileName(fileName: String): String {
-        return fileName
-            .replace(Regex("[\\p{Cc}\\p{Cn}\\p{Cf}]"), "_") // Strip control, unassigned, and format characters (including BIDI/RTL overrides)
-            .replace(Regex("[\\\\/:*?\"<>|]"), "_")          // Replace illegal filesystem characters
-            .replace(Regex("\\.\\.+"), "_")                  // Prevent path traversal sequences
-            .replace(Regex("_+"), "_")                      // Collapse multiple underscores
-            .trim { it == '_' || it == '.' || it.isWhitespace() }
-            .ifBlank { DEFAULT_CUSTOM_FILENAME }
+        return ExportFileName.sanitize(fileName)
     }
 
-    /**
-     * Get file size from a content URI.
-     */
-    private fun getFileSize(uri: Uri): Long {
-        return try {
-            context.contentResolver.openFileDescriptor(uri, "r")?.use {
-                it.statSize
-            } ?: 0L
-        } catch (_: Exception) {
-            0L
-        }
-    }
-
-    /**
-     * Resolve output path for pre-Android 10 devices where RELATIVE_PATH is unavailable.
-     */
-    private fun resolveLegacyOutputFile(
-        fileName: String,
-        exportDirectory: ExportDirectory
-    ): java.io.File {
-        val relativePath = exportDirectory.relativePath
-        val rootSegment = relativePath.substringBefore('/')
-        val childSegment = relativePath.substringAfter('/', "")
-        val publicDirectory = when (rootSegment.uppercase()) {
-            "DCIM" -> Environment.DIRECTORY_DCIM
-            "MOVIES" -> Environment.DIRECTORY_MOVIES
-            else -> Environment.DIRECTORY_PICTURES
-        }
-        val baseDir = Environment.getExternalStoragePublicDirectory(publicDirectory)
-        val targetDir = if (childSegment.isNotBlank()) {
-            java.io.File(baseDir, childSegment)
-        } else {
-            baseDir
-        }
-        if (!targetDir.exists() && !targetDir.mkdirs()) {
-            throw java.io.IOException("Failed to create output directory: ${targetDir.absolutePath}")
-        }
-        return java.io.File(targetDir, fileName)
-    }
-
-    private fun cleanupFailedOutput(uri: Uri) {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                context.contentResolver.delete(uri, null)
-            } else {
-                val docFile = DocumentFile.fromSingleUri(context, uri)
-                docFile?.delete() ?: context.contentResolver.delete(uri, null, null)
-            }
-        } catch (e: Exception) {
-            LogUtils.w(context, "FrameExporter", "Failed to cleanup output file on cancellation", e)
-        }
-    }
 }
 
 internal fun ExportFormat.toCompressFormat(
     quality: Int,
     sdkInt: Int = Build.VERSION.SDK_INT
 ): Bitmap.CompressFormat {
-    return Bitmap.CompressFormat.JPEG
+    return when (this) {
+        ExportFormat.JPEG -> Bitmap.CompressFormat.JPEG
+        ExportFormat.HEIC -> throw UnsupportedOperationException("HEIC requires HeifWriter, not Bitmap.compress")
+    }
 }
 
 /**

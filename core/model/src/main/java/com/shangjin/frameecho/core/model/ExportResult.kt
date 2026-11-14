@@ -24,7 +24,11 @@ sealed class ExportResult {
          * did not enable mute — e.g. the source audio codec could neither be
          * embedded nor transcoded. Lets the UI warn instead of succeeding silently.
          */
-        val audioDropped: Boolean = false
+        val audioDropped: Boolean = false,
+        /** True only when the original primary image bytes were copied without modification. */
+        val originalImagePreserved: Boolean = false,
+        /** Storage or source precision limitations; ctime cannot be restored on Android/Linux. */
+        val timestampWarnings: List<String> = emptyList()
     ) : ExportResult() {
         /** Whether the actual format differs from what the user requested. */
         val formatFallbackOccurred: Boolean
