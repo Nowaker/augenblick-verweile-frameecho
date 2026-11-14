@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- androidx.heifwriter declares minSdk 28. HEIC encoding is gated at runtime on
+         API 28+, so the app keeps minSdk 26 and JPEG export there. -->
+    <uses-sdk tools:overrideLibrary="androidx.heifwriter" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Android 14+ selected photo access support -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
