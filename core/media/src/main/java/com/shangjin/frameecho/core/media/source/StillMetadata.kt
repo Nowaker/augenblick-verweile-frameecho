@@ -1,6 +1,7 @@
 package com.shangjin.frameecho.core.media.source
 
 import androidx.exifinterface.media.ExifInterface
+import com.shangjin.frameecho.core.media.metadata.ExifMetadata
 import com.shangjin.frameecho.core.media.utils.ExifUtils
 import com.shangjin.frameecho.core.model.VideoMetadata
 import java.io.IOException
@@ -30,7 +31,8 @@ internal object StillMetadata {
             exposureTime = ExifUtils.normalizeExposureTime(exif.getAttribute(ExifInterface.TAG_EXPOSURE_TIME)),
             fNumber = exif.getAttributeDouble(ExifInterface.TAG_F_NUMBER, Double.NaN).takeIf { it.isFinite() },
             focalLength = exif.getAttributeDouble(ExifInterface.TAG_FOCAL_LENGTH, Double.NaN).takeIf { it.isFinite() },
-            sourceFileName = fileName
+            sourceFileName = fileName,
+            exifAttributes = ExifMetadata.read(exif)
         )
     }
 
