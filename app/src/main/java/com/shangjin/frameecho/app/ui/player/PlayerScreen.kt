@@ -499,8 +499,8 @@ fun PlayerScreen(
     val mediaLocationNoticeMsg = stringResource(R.string.media_location_denied_notice)
     LaunchedEffect(uiState.showMediaLocationNotice) {
         if (uiState.showMediaLocationNotice) {
-            viewModel.clearMediaLocationNotice()
             snackbarHostState.showSnackbar(message = mediaLocationNoticeMsg, duration = SnackbarDuration.Long)
+            viewModel.clearMediaLocationNotice()
         }
     }
 
@@ -518,7 +518,6 @@ fun PlayerScreen(
                 is PlayerError.PlaybackFailed -> playbackErrorFormat.format(error.detail ?: "?")
                 is PlayerError.OriginalStillUnavailable -> originalUnavailableMsg
             }
-            viewModel.clearError()
             val coverMs = viewModel.uiState.value.coverAnchorUs?.let { it / 1000L }
             val result = snackbarHostState.showSnackbar(
                 message = message,
@@ -531,6 +530,7 @@ fun PlayerScreen(
                 exoPlayer.seekTo(coverMs)
                 viewModel.updatePosition(coverMs)
             }
+            viewModel.clearError()
         }
     }
 
