@@ -27,6 +27,13 @@ class ExportFileNameTest {
     }
 
     @Test
+    fun `millisecond rounded positions resolve to the nearest estimated frame`() {
+        assertEquals("00000001", ExportFileName.tokens(frame.copy(timestampUs = 33_000), 1)["{frame}"])
+        assertEquals("00000002", ExportFileName.tokens(frame.copy(timestampUs = 67_000,
+            metadata = frame.metadata.copy(frameRate = 29.97f)), 1)["{frame}"])
+    }
+
+    @Test
     fun `expanded names cannot escape directories or exceed filesystem name limits`() {
         val source = frame.copy(metadata = frame.metadata.copy(sourceFileName = "a\u202Eevil.mp4"))
         val result = ExportFileName.generate(source, ExportConfig(customFileName = "../../{filename}/x"), 1)

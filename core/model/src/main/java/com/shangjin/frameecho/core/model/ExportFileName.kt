@@ -1,6 +1,6 @@
 package com.shangjin.frameecho.core.model
 
-import kotlin.math.floor
+import kotlin.math.roundToLong
 
 /** The same pure filename generator is used by previews and exports. */
 object ExportFileName {
@@ -13,9 +13,9 @@ object ExportFileName {
             ?.substringAfterLast('\\')?.substringBeforeLast('.') ?: "FrameEcho"),
         "{timestamp}" to exportTimestampMs.toString(),
         "{position}" to frame.timestampUs.coerceAtLeast(0).toString().padStart(12, '0'),
-        "{frame}" to floor(frame.timestampUs.coerceAtLeast(0) / 1_000_000.0 *
+        "{frame}" to (frame.timestampUs.coerceAtLeast(0) / 1_000_000.0 *
             (frame.metadata.frameRate.takeIf { it.isFinite() && it > 0f } ?: 0f))
-            .toLong().toString().padStart(8, '0')
+            .roundToLong().toString().padStart(8, '0')
     )
 
     fun generate(
