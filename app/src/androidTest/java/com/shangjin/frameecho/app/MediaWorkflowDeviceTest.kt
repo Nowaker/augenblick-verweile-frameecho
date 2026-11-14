@@ -5,7 +5,9 @@ import android.graphics.BitmapFactory
 import android.media.ExifInterface
 import android.net.Uri
 import android.os.Bundle
+import android.os.Process
 import android.provider.MediaStore
+import android.system.Os
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.shangjin.frameecho.core.media.export.FrameExporter
@@ -24,6 +26,8 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.Paths
 import java.time.OffsetDateTime
 
 @RunWith(AndroidJUnit4::class)
@@ -65,7 +69,7 @@ class MediaWorkflowDeviceTest {
 
             assertEquals(ExportFormat.JPEG, result.format)
             assertTrue(result.metadataPreserved)
-            val expectedMs = OffsetDateTime.parse("2026-11-14T12:34:57.356789+05:45").toInstant().toEpochMilli()
+            val expectedTime = OffsetDateTime.parse("2026-11-14T12:34:57.356789+05:45").toInstant()
             context.contentResolver.openInputStream(Uri.parse(result.outputPath))!!.use { input ->
                 val exif = ExifInterface(input)
                 assertEquals("2026:11:14 12:34:57", exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL))
@@ -78,7 +82,18 @@ class MediaWorkflowDeviceTest {
                 Uri.parse(result.outputPath), arrayOf(MediaStore.Images.Media.DATE_TAKEN), null, null, null
             )!!.use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(expectedMs, cursor.getLong(0))
+                assertEquals(expectedTime.toEpochMilli(), cursor.getLong(0))
+            }
+            context.contentResolver.openFileDescriptor(Uri.parse(result.outputPath), "r")!!.use { descriptor ->
+                val path = Paths.get("/proc/self/fd/${descriptor.fd}")
+                val actualTime = Files.getLastModifiedTime(path).toInstant()
+                val inodeOwner = Os.fstat(descriptor.fileDescriptor).st_uid
+                if (actualTime != expectedTime && inodeOwner != Process.myUid()) {
+                    assertTrue("A provider-owned inode must report its timestamp permission denial",
+                        result.timestampWarnings.any { it.contains("errno 1)") || it.contains("errno 13)") })
+                } else {
+                    assertEquals("Permitted filesystem mtime retains the selected frame microseconds", expectedTime, actualTime)
+                }
             }
         } finally {
             extractor.releaseBitmap(bitmap)
