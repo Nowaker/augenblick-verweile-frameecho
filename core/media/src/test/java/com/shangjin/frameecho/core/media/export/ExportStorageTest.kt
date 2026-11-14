@@ -14,6 +14,7 @@ import com.shangjin.frameecho.core.model.ExportFormat
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkConstructor
+import io.mockk.mockkObject
 import io.mockk.mockkStatic
 import io.mockk.unmockkAll
 import kotlinx.coroutines.test.runTest
@@ -29,6 +30,7 @@ import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.Paths
+import java.nio.file.attribute.FileTime
 import java.time.Instant
 
 class ExportStorageTest {
@@ -64,8 +66,18 @@ class ExportStorageTest {
         val file = java.io.File(temporaryFolder.root, "frame.jpg")
         val bytes = byteArrayOf(1, 2, 3, 4)
         every { resolver.openOutputStream(uri) } answers { file.outputStream() }
-        every { resolver.openFileDescriptor(uri, "rw") } answers {
-            val handle = RandomAccessFile(file, "rw")
+        every { resolver.update(uri, any(), null, null) } answers {
+            Files.setLastModifiedTime(file.toPath(), FileTime.from(Instant.parse("2026-11-14T13:47:01Z")))
+            1
+        }
+        mockkObject(FileDescriptorTimes)
+        every { FileDescriptorTimes.restore(any(), any()) } answers {
+            Files.setLastModifiedTime(file.toPath(), FileTime.from(secondArg<Instant>()))
+            0
+        }
+        every { FileDescriptorTimes.read(any()) } answers { Files.getLastModifiedTime(file.toPath()).toInstant() }
+        every { resolver.openFileDescriptor(uri, "r") } answers {
+            val handle = RandomAccessFile(file, "r")
             val descriptor = mockk<ParcelFileDescriptor>()
             val number = Files.list(Paths.get("/proc/self/fd")).use { paths ->
                 paths.filter { path ->
@@ -75,12 +87,6 @@ class ExportStorageTest {
             every { descriptor.fd } returns number
             every { descriptor.close() } answers { handle.close() }
             descriptor
-        }
-        every { resolver.openFileDescriptor(uri, "r") } answers {
-            mockk<ParcelFileDescriptor>().also { descriptor ->
-                every { descriptor.statSize } returns file.length()
-                every { descriptor.close() } returns Unit
-            }
         }
         val stored = ExportStorage(context).save(ExportDestination("frame.jpg", ExportFormat.JPEG, config,
             captureTime = CaptureTime.parse("2024-01-01T00:00:00.123456Z"))) { it.write(bytes) }

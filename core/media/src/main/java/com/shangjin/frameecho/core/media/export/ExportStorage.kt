@@ -18,9 +18,6 @@ import java.io.File
 import java.io.FilterOutputStream
 import java.io.IOException
 import java.io.OutputStream
-import java.nio.file.Files
-import java.nio.file.Paths
-import java.nio.file.attribute.FileTime
 import java.time.ZoneId
 
 internal data class ExportDestination(
@@ -129,20 +126,6 @@ internal class ExportStorage(private val context: Context) {
 
     private fun finish(uri: Uri, destination: ExportDestination): List<String> {
         val warnings = mutableListOf("Filesystem creation/change time (ctime) cannot be restored on Android/Linux.")
-        destination.captureTime?.let { time ->
-            if (time.offset == null) warnings += "Source timezone is unavailable; epoch time uses the device timezone."
-            try {
-                val descriptor = resolver.openFileDescriptor(uri, "rw") ?: throw IOException("No writable descriptor")
-                descriptor.use {
-                    val instant = time.offset?.let { offset -> time.localDateTime.toInstant(offset) }
-                        ?: time.localDateTime.atZone(ZoneId.systemDefault()).toInstant()
-                    Files.setLastModifiedTime(Paths.get("/proc/self/fd/${it.fd}"), FileTime.from(instant))
-                }
-            } catch (_: Exception) {
-                warnings += "Storage provider does not allow restoring the file modification time."
-            }
-        } ?: run { warnings += "Source capture time is unavailable; original file timestamps cannot be restored." }
-
         if (destination.treeUri == null) {
             val values = ContentValues().apply {
                 destination.captureTime?.let {
@@ -157,6 +140,28 @@ internal class ExportStorage(private val context: Context) {
         } else {
             warnings += "Custom document providers control gallery dates and may limit timestamp precision."
         }
+
+        destination.captureTime?.let { time ->
+            if (time.offset == null) warnings += "Source timezone is unavailable; epoch time uses the device timezone."
+            try {
+                val instant = time.offset?.let { offset -> time.localDateTime.toInstant(offset) }
+                    ?: time.localDateTime.atZone(ZoneId.systemDefault()).toInstant()
+                val descriptor = resolver.openFileDescriptor(uri, "r") ?: throw IOException("No export descriptor")
+                val error = descriptor.use { FileDescriptorTimes.restore(it.fd, instant) }
+                if (error != 0) {
+                    warnings += "Storage denied restoring the file modification time (errno $error)."
+                } else {
+                    val reopened = resolver.openFileDescriptor(uri, "r") ?: throw IOException("No export descriptor")
+                    val actual = reopened.use { FileDescriptorTimes.read(it.fd) }
+                    if (actual != instant) {
+                        warnings += "Storage provider did not retain the full modification-time precision."
+                    }
+                }
+            } catch (_: Exception) {
+                warnings += "Storage provider does not allow restoring the file modification time."
+            }
+        } ?: run { warnings += "Source capture time is unavailable; original file timestamps cannot be restored." }
+
         return warnings
     }
 }
