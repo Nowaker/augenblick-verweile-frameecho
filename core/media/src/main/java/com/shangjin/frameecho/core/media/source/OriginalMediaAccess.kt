@@ -27,8 +27,9 @@ object OriginalMediaAccess {
     private val COLLECTIONS = setOf("images", "video", "file")
 
     fun readUri(context: Context, uri: Uri): Uri {
+        if (Build.VERSION.SDK_INT < 29) return uri
         if (!isMediaStoreCollectionItem(uri)) return uri
-        val granted = Build.VERSION.SDK_INT >= API_ACCESS_MEDIA_LOCATION && canReadOriginal(context)
+        val granted = canReadOriginal(context)
         return readUri(uri, Build.VERSION.SDK_INT, granted, MediaStore::setRequireOriginal)
     }
 
