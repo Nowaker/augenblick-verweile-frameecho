@@ -204,8 +204,8 @@ class PlayerViewModel : ViewModel() {
     private var framePreviewForwardJob: Job? = null
 
     /**
-     * True once the frame-step decoder has produced a frame for the open video. Until
-     * then (or if it can't open the file at all) held repeats seek the player instead.
+     * True while the frame-step decoder has a usable preview for the open video.
+     * Otherwise held repeats seek the player instead.
      */
     var isFramePreviewWorking: Boolean = false
         private set
@@ -873,7 +873,7 @@ class PlayerViewModel : ViewModel() {
             adjacentFramePreview = created
             framePreviewForwardJob = viewModelScope.launch {
                 created.preview.collect {
-                    if (it != null) isFramePreviewWorking = true
+                    isFramePreviewWorking = it != null
                     _framePreview.value = it
                 }
             }
