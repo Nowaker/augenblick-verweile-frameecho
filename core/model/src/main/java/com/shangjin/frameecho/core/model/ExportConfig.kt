@@ -6,7 +6,7 @@ package com.shangjin.frameecho.core.model
 data class ExportConfig(
     /** Image format */
     val format: ExportFormat = ExportFormat.JPEG,
-    /** Quality (1-100), 100 = best quality / lossless where supported */
+    /** Encoder quality (1-100). Quality 100 does not imply lossless encoding. */
     val quality: Int = 100,
     /** Whether to preserve original video metadata in the exported image */
     val preserveMetadata: Boolean = true,
@@ -23,10 +23,12 @@ data class ExportConfig(
     val muteAudio: Boolean = false,
     /** Optional output resolution override. Null = original resolution. */
     val maxResolution: Int? = null,
-    /** Optional custom base filename (without extension). Null/blank = default naming. */
+    /** Literal base name or template using [ExportFileName.tokens]. Null/blank = auto. */
     val customFileName: String? = null,
     /** Default export location in shared storage. */
-    val exportDirectory: ExportDirectory = ExportDirectory.PICTURES_FRAMEECHO
+    val exportDirectory: ExportDirectory = ExportDirectory.PICTURES_FRAMEECHO,
+    /** Copy the original Motion Photo cover image; requires the original-image export API. */
+    val originalImage: Boolean = false
 ) {
     /** Total motion photo duration in seconds */
     val totalMotionDurationS: Float

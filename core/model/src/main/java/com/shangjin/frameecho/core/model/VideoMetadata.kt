@@ -40,5 +40,9 @@ data class VideoMetadata(
     /** Duration in milliseconds */
     val durationMs: Long = 0,
     /** Source file name */
-    val sourceFileName: String? = null
+    val sourceFileName: String? = null,
+    /** Presentation timestamp represented by [dateTime]; zero for a video start. */
+    val dateTimePositionUs: Long = 0,
+    /** Available source EXIF attributes. Exporters copy only safe, supported tags. */
+    val exifAttributes: Map<String, String> = emptyMap()
 )
