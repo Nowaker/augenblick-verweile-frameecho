@@ -1,3 +1,6 @@
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -7,15 +10,18 @@ plugins {
 android {
     namespace = "com.shangjin.frameecho"
     compileSdk = 36
-    val resolvedVersionName = providers.gradleProperty("VERSION_NAME").orElse("1.0.0").get()
-    val resolvedVersionCode = providers.gradleProperty("VERSION_CODE").orElse("1").get().toInt()
+    val buildTime = ZonedDateTime.now()
+    val resolvedVersionName = providers.gradleProperty("VERSION_NAME").orElse("1.2.1-nowaker").get()
+    val resolvedVersionCode = providers.gradleProperty("VERSION_CODE")
+        .orElse((buildTime.toEpochSecond() - 1_577_836_800L).toString()).get().toInt()
 
     defaultConfig {
-        applicationId = "com.shangjin.frameecho"
+        applicationId = "net.nowaker.augenblick"
         minSdk = 26
         targetSdk = 36
         versionCode = resolvedVersionCode
         versionName = resolvedVersionName
+        buildConfigField("String", "BUILD_TIMESTAMP", "\"${buildTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z"))}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

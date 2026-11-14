@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">FrameEcho</string>
+    <string name="app_name">Augenblick, verweile! (FrameEcho)</string>
     <string name="app_slogan">お気に入りのフレームを残そう</string>
     <string name="select_video">ビデオを選択</string>
     <string name="capture_frame">フレームをキャプチャ</string>

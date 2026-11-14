@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">FrameEcho</string>
+    <string name="app_name">Augenblick, verweile! (FrameEcho)</string>
+    <string name="fork_toolbar_title" translatable="false">Augenblick, verweile!</string>
     <string name="app_slogan">Freeze Every Frame You Love</string>
     <string name="select_video">Select Video</string>
     <string name="capture_frame">Capture Frame</string>
