@@ -24,9 +24,10 @@ object ExportFileName {
         exportTimestampMs: Long,
         isMotion: Boolean = false
     ): String {
-        val values = tokens(frame, exportTimestampMs)
+        val timestampMs = config.fileNameTimestampMs ?: exportTimestampMs
+        val values = tokens(frame, timestampMs)
         val template = config.customFileName?.takeIf { it.isNotBlank() }
-        val suffix = "${exportTimestampMs}_${frame.timestampUs / 1000}"
+        val suffix = "${timestampMs}_${frame.timestampUs / 1000}"
         val base = when {
             template == null -> "${if (isMotion) "MVIMG" else "IMG"}_$suffix"
             TOKEN.containsMatchIn(template) -> TOKEN.replace(template) { match ->

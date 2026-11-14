@@ -28,7 +28,9 @@ data class ExportConfig(
     /** Default export location in shared storage. */
     val exportDirectory: ExportDirectory = ExportDirectory.PICTURES_FRAMEECHO,
     /** Copy the original Motion Photo cover image; requires the original-image export API. */
-    val originalImage: Boolean = false
+    val originalImage: Boolean = false,
+    /** Ephemeral selection clock shared by filename preview and export; do not persist as a setting. */
+    val fileNameTimestampMs: Long? = null
 ) {
     /** Total motion photo duration in seconds */
     val totalMotionDurationS: Float

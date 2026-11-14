@@ -34,6 +34,15 @@ class ExportFileNameTest {
     }
 
     @Test
+    fun `selection clock makes preview and export identical despite wall clock changes`() {
+        val config = ExportConfig(customFileName = "{filename}_{timestamp}_{frame}", fileNameTimestampMs = 123)
+        assertEquals("holiday.part.one_123_00000037.jpg", ExportFileName.generate(frame, config, 456))
+        assertEquals("holiday.part.one_123_00000037.jpg", ExportFileName.generate(frame, config, 789))
+        assertEquals("IMG_123_1234.jpg", ExportFileName.generate(frame, config.copy(customFileName = null), 456))
+        assertEquals("literal_123_1234.jpg", ExportFileName.generate(frame, config.copy(customFileName = "literal"), 789))
+    }
+
+    @Test
     fun `expanded names cannot escape directories or exceed filesystem name limits`() {
         val source = frame.copy(metadata = frame.metadata.copy(sourceFileName = "a\u202Eevil.mp4"))
         val result = ExportFileName.generate(source, ExportConfig(customFileName = "../../{filename}/x"), 1)
