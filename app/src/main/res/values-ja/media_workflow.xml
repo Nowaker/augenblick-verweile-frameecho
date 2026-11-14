@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Opening media -->
+    <string name="open_system_picker">システムのギャラリーから開く</string>
+    <string name="browse_in_app_gallery">アプリ内ギャラリーを見る</string>
+    <string name="opening_media">開いています…</string>
+    <string name="error_open_no_video">この写真には動画が埋め込まれていません。開けるのはモーションフォトだけです。Apple の Live Photo の静止画は、別の動画ファイルが必要です。</string>
+    <string name="error_open_malformed">このモーションフォトは破損しているため、動画を読み取れません。</string>
+    <string name="error_open_unreadable">このファイルを読み取れません。削除されたか、共有元のアプリがアクセスを許可しなくなった可能性があります。</string>
+    <string name="error_playback">この動画はこの端末では再生できません（%1$s）。</string>
+    <string name="error_original_unavailable">元の静止画はカバーフレームにのみ存在します。カバーフレームに移動するか、元の静止画のコピーをオフにしてください。</string>
+    <string name="go_to_cover">カバーフレームへ</string>
+
+    <!-- Shared grid -->
+    <string name="media_kind_video">動画</string>
+    <string name="media_kind_motion_photo">モーションフォト</string>
+
+    <!-- Recent files -->
+    <string name="recent_files">最近のファイル</string>
+    <string name="recents_only_saved">フレームを保存したファイルのみ</string>
+    <string name="recents_empty_all">開いたファイルがここに表示されます。</string>
+    <string name="recents_empty_saved">フレームを保存したファイルはまだありません。</string>
+    <plurals name="recent_saved_frames">
+        <item quantity="other">%d フレーム保存済み</item>
+    </plurals>
+    <string name="recent_unavailable">アクセスできなくなりました</string>
+    <string name="recent_unavailable_message">このファイルにはアクセスできなくなりました。他のアプリから共有されたファイルは、そのアプリの許可が続く間だけ読み取れます。共有元またはシステムのギャラリーからもう一度開いてください。</string>
+    <string name="recent_remove">削除</string>
+
+    <!-- In-app gallery -->
+    <string name="gallery_title">ギャラリー</string>
+    <string name="gallery_refresh">更新</string>
+    <string name="gallery_permission_title">動画へのアクセスを許可</string>
+    <string name="gallery_permission_body">FrameEcho はここに動画とモーションフォトを一覧表示します。データが端末の外に出ることはありません。アクセスを許可しなくても、システムのピッカーで個別のファイルを開けます。</string>
+    <string name="gallery_permission_grant">アクセスを許可</string>
+    <string name="gallery_permission_denied">アクセスが拒否されました。アプリの設定で許可するか、システムのピッカーでファイルを開いてください。</string>
+    <string name="gallery_open_app_settings">アプリの設定を開く</string>
+    <string name="gallery_selected_only">FrameEcho が見られるのは選択した写真と動画だけです。</string>
+    <string name="gallery_select_more">さらに選択</string>
+    <string name="gallery_videos_only">写真へのアクセスが許可されていないため、モーションフォトは表示されません。</string>
+    <string name="gallery_allow_photos">写真を許可</string>
+    <string name="gallery_loading">ライブラリを読み込んでいます…</string>
+    <string name="gallery_scanning">モーションフォトを探しています… %1$d/%2$d</string>
+    <string name="gallery_empty">動画やモーションフォトが見つかりません。</string>
+    <string name="gallery_error">ライブラリを読み取れませんでした: %1$s</string>
+    <string name="gallery_retry">再試行</string>
+
+    <!-- App settings -->
+    <string name="more_options">その他のオプション</string>
+    <string name="app_settings">設定</string>
+
+    <!-- Shared and viewed files -->
+    <string name="incoming_choose_title">開くファイルを選択</string>
+    <plurals name="incoming_shared_count">
+        <item quantity="other">%1$d 件のファイルが FrameEcho に共有されました。今開くものを 1 つ選んでください。残りはこの一覧を閉じるまでここに残ります。</item>
+    </plurals>
+    <string name="incoming_unsupported">%1$s は動画でもモーションフォトでもないため開けません。</string>
+    <string name="incoming_none_supported">FrameEcho で開けるものが共有されませんでした。動画かモーションフォトを共有してください。</string>
+    <string name="incoming_dismiss">閉じる</string>
+</resources>

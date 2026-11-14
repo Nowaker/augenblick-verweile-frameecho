@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Opening media -->
+    <string name="open_system_picker">从系统图库打开</string>
+    <string name="browse_in_app_gallery">浏览应用内图库</string>
+    <string name="opening_media">正在打开…</string>
+    <string name="error_open_no_video">这张图片没有内嵌视频。只能打开动态照片；Apple 实况照片的静态图需要单独的视频文件。</string>
+    <string name="error_open_malformed">这张动态照片已损坏，无法读取其中的视频。</string>
+    <string name="error_open_unreadable">无法读取此文件。它可能已被删除，或者分享它的应用不再允许访问。</string>
+    <string name="error_playback">此设备无法播放该视频（%1$s）。</string>
+    <string name="error_original_unavailable">原始静态图只存在于封面帧。请跳转到封面帧，或关闭“复制原始静态图”。</string>
+    <string name="go_to_cover">跳转到封面帧</string>
+
+    <!-- Shared grid -->
+    <string name="media_kind_video">视频</string>
+    <string name="media_kind_motion_photo">动态照片</string>
+
+    <!-- Recent files -->
+    <string name="recent_files">最近的文件</string>
+    <string name="recents_only_saved">仅显示已保存过帧的文件</string>
+    <string name="recents_empty_all">你打开过的文件会显示在这里。</string>
+    <string name="recents_empty_saved">还没有保存过帧的文件。</string>
+    <plurals name="recent_saved_frames">
+        <item quantity="other">已保存 %d 帧</item>
+    </plurals>
+    <string name="recent_unavailable">已无法访问</string>
+    <string name="recent_unavailable_message">此文件已无法访问。从其他应用分享的文件只在该应用的授权有效期间可读；请从原应用或系统图库重新打开。</string>
+    <string name="recent_remove">移除</string>
+
+    <!-- In-app gallery -->
+    <string name="gallery_title">图库</string>
+    <string name="gallery_refresh">刷新</string>
+    <string name="gallery_permission_title">允许访问你的视频</string>
+    <string name="gallery_permission_body">FrameEcho 会在这里列出你的视频和动态照片，数据不会离开你的设备。不授权也可以用系统选择器打开单个文件。</string>
+    <string name="gallery_permission_grant">允许访问</string>
+    <string name="gallery_permission_denied">访问被拒绝。请在应用设置中授权，或用系统选择器打开文件。</string>
+    <string name="gallery_open_app_settings">打开应用设置</string>
+    <string name="gallery_selected_only">FrameEcho 只能看到你选择的照片和视频。</string>
+    <string name="gallery_select_more">选择更多</string>
+    <string name="gallery_videos_only">未授予照片访问权限，因此不显示动态照片。</string>
+    <string name="gallery_allow_photos">允许访问照片</string>
+    <string name="gallery_loading">正在加载你的媒体库…</string>
+    <string name="gallery_scanning">正在查找动态照片… %1$d/%2$d</string>
+    <string name="gallery_empty">没有找到视频或动态照片。</string>
+    <string name="gallery_error">无法读取媒体库：%1$s</string>
+    <string name="gallery_retry">重试</string>
+
+    <!-- App settings -->
+    <string name="more_options">更多选项</string>
+    <string name="app_settings">设置</string>
+
+    <!-- Shared and viewed files -->
+    <string name="incoming_choose_title">选择要打开的文件</string>
+    <plurals name="incoming_shared_count">
+        <item quantity="other">有 %1$d 个文件分享给了 FrameEcho。请选择一个现在打开，其余文件会保留在这里，直到你关闭此列表。</item>
+    </plurals>
+    <string name="incoming_unsupported">%1$s 不是视频或动态照片，无法打开。</string>
+    <string name="incoming_none_supported">分享的内容中没有 FrameEcho 能打开的文件。请分享视频或动态照片。</string>
+    <string name="incoming_dismiss">关闭</string>
+</resources>

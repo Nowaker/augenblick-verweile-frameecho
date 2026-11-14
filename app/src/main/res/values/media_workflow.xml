@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Opening media -->
+    <string name="open_system_picker">Open from system gallery</string>
+    <string name="browse_in_app_gallery">Browse in-app gallery</string>
+    <string name="opening_media">Opening…</string>
+    <string name="error_open_no_video">This picture has no embedded video. Only motion photos can be opened; an Apple Live Photo still needs its separate video file.</string>
+    <string name="error_open_malformed">This motion photo is damaged, so its video can\'t be read.</string>
+    <string name="error_open_unreadable">This file can\'t be read. It may have been deleted, or the app that shared it no longer allows access.</string>
+    <string name="error_playback">This video can\'t be played on this device (%1$s).</string>
+    <string name="error_original_unavailable">The original still exists only at the cover frame. Go to the cover frame, or turn off copying the original still.</string>
+    <string name="go_to_cover">Go to cover frame</string>
+
+    <!-- Shared grid -->
+    <string name="media_kind_video">Video</string>
+    <string name="media_kind_motion_photo">Motion photo</string>
+
+    <!-- Recent files -->
+    <string name="recent_files">Recent files</string>
+    <string name="recents_only_saved">Only files with saved frames</string>
+    <string name="recents_empty_all">Files you open appear here.</string>
+    <string name="recents_empty_saved">No files with saved frames yet.</string>
+    <plurals name="recent_saved_frames">
+        <item quantity="one">%d frame saved</item>
+        <item quantity="other">%d frames saved</item>
+    </plurals>
+    <string name="recent_unavailable">No longer accessible</string>
+    <string name="recent_unavailable_message">This file is no longer accessible. Files shared from another app stay readable only while that app\'s permission lasts; open it again from there or from the system gallery.</string>
+    <string name="recent_remove">Remove</string>
+
+    <!-- In-app gallery -->
+    <string name="gallery_title">Gallery</string>
+    <string name="gallery_refresh">Refresh</string>
+    <string name="gallery_permission_title">Allow access to your videos</string>
+    <string name="gallery_permission_body">FrameEcho lists your videos and motion photos here. Nothing leaves your device. You can also open a single file with the system picker without granting access.</string>
+    <string name="gallery_permission_grant">Allow access</string>
+    <string name="gallery_permission_denied">Access was denied. Grant it in app settings, or open files with the system picker.</string>
+    <string name="gallery_open_app_settings">Open app settings</string>
+    <string name="gallery_selected_only">FrameEcho can see only the photos and videos you selected.</string>
+    <string name="gallery_select_more">Select more</string>
+    <string name="gallery_videos_only">Motion photos are hidden because photo access is not granted.</string>
+    <string name="gallery_allow_photos">Allow photos</string>
+    <string name="gallery_loading">Loading your library…</string>
+    <string name="gallery_scanning">Looking for motion photos… %1$d/%2$d</string>
+    <string name="gallery_empty">No videos or motion photos found.</string>
+    <string name="gallery_error">Could not read your library: %1$s</string>
+    <string name="gallery_retry">Retry</string>
+
+    <!-- App settings -->
+    <string name="more_options">More options</string>
+    <string name="app_settings">Settings</string>
+
+    <!-- Shared and viewed files -->
+    <string name="incoming_choose_title">Choose a file to open</string>
+    <plurals name="incoming_shared_count">
+        <item quantity="one">%1$d file was shared with FrameEcho. Pick it to open now; it stays here until you close this list.</item>
+        <item quantity="other">%1$d files were shared with FrameEcho. Pick one to open now; the others stay here until you close this list.</item>
+    </plurals>
+    <string name="incoming_unsupported">%1$s isn\'t a video or motion photo and can\'t be opened.</string>
+    <string name="incoming_none_supported">Nothing FrameEcho can open was shared. Share a video or a motion photo.</string>
+    <string name="incoming_dismiss">Close</string>
+</resources>
