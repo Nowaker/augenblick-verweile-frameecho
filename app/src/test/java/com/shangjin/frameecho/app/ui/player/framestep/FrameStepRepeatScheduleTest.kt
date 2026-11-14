@@ -118,6 +118,17 @@ class FrameStepRepeatScheduleTest {
     }
 
     @Test
+    fun `draft shows decimal speeds as typed and round-trips them`() {
+        val schedule = FrameStepRepeatSchedule(1_500, listOf(RepeatStage(0, 5.1f), RepeatStage(2_250, 12.5f)))
+        val draft = ScheduleDraft.from(schedule)
+
+        assertEquals(listOf("5.1", "12.5"), draft.stages.map { it.framesPerSecond })
+        assertEquals(listOf("0", "2.25"), draft.stages.map { it.startAfterSeconds })
+        assertEquals("1.5", draft.initialDelaySeconds)
+        assertEquals(ScheduleDraft.Result.Valid(schedule), draft.toSchedule())
+    }
+
+    @Test
     fun `repeater waits the initial delay then steps on schedule without drift`() = runTest {
         val stepTimes = mutableListOf<Long>()
         val job = launch {

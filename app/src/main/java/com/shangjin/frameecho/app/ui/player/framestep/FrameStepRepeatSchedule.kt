@@ -179,7 +179,7 @@ data class ScheduleDraft(
         fun from(schedule: FrameStepRepeatSchedule) = ScheduleDraft(
             initialDelaySeconds = msToSeconds(schedule.initialDelayMs),
             stages = schedule.stages.map {
-                StageDraft(msToSeconds(it.startAfterMs), formatNumber(it.framesPerSecond.toDouble()))
+                StageDraft(msToSeconds(it.startAfterMs), formatFps(it.framesPerSecond))
             }
         )
 
@@ -192,6 +192,10 @@ data class ScheduleDraft(
         private fun msToSeconds(ms: Long): String = formatNumber(ms / 1000.0)
 
         private fun formatNumber(value: Double): String =
+            if (value == floor(value)) value.toLong().toString() else value.toString()
+
+        /** Float's own shortest form: widening 5.1f to Double would print 5.099999904632568. */
+        private fun formatFps(value: Float): String =
             if (value == floor(value)) value.toLong().toString() else value.toString()
     }
 }
