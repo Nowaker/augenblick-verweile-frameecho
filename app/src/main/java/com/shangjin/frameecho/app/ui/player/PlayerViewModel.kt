@@ -1,8 +1,10 @@
 package com.shangjin.frameecho.app.ui.player
 
+import android.content.ContentResolver
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,6 +20,7 @@ import com.shangjin.frameecho.core.media.export.FrameExporter
 import com.shangjin.frameecho.core.media.metadata.MetadataExtractor
 import com.shangjin.frameecho.core.media.source.MediaSourceException
 import com.shangjin.frameecho.core.media.source.MediaSourceResolver
+import com.shangjin.frameecho.core.media.source.OriginalMediaAccess
 import com.shangjin.frameecho.core.media.source.ResolvedMedia
 import com.shangjin.frameecho.core.media.utils.LogUtils
 import com.shangjin.frameecho.core.model.CapturedFrame
@@ -54,6 +57,14 @@ sealed class PlayerError {
     data class PlaybackFailed(val detail: String? = null) : PlayerError()
     /** Original-still export asked for away from the cover frame. */
     data object OriginalStillUnavailable : PlayerError()
+}
+
+/** ACCESS_MEDIA_LOCATION as it bears on reading location metadata. */
+enum class MediaLocationConsent {
+    /** Before Android 10 location is never redacted, so there is nothing to ask. */
+    NOT_APPLICABLE,
+    GRANTED,
+    NOT_GRANTED
 }
 
 enum class OpenFailure {
@@ -101,7 +112,14 @@ data class PlayerUiState(
      * shown frame changes and after each save, never persisted, so the name previewed
      * for a frame is exactly the name the save writes.
      */
-    val fileNameTimestampMs: Long = 0L
+    val fileNameTimestampMs: Long = 0L,
+    /**
+     * A picked file waits for the user to allow or refuse location metadata access
+     * before it is read, so its metadata is read unredacted from the start.
+     */
+    val awaitingMediaLocationConsent: Boolean = false,
+    /** Location access was refused: say once that location may be missing. */
+    val showMediaLocationNotice: Boolean = false
 ) {
     /** The frame a capture takes: the one on screen when known, else the position. */
     val selectedFrameUs: Long
@@ -198,6 +216,12 @@ class PlayerViewModel : ViewModel() {
     private var loadMetadata: (suspend (Uri) -> VideoMetadata)? = null
     private var recentMedia: RecentMediaRecorder? = null
     private var clock: () -> Long = System::currentTimeMillis
+    private var mediaLocationConsent: () -> MediaLocationConsent = { MediaLocationConsent.NOT_APPLICABLE }
+
+    /** The open waiting on [PlayerUiState.awaitingMediaLocationConsent]. */
+    private var pendingOpen: Pair<Uri, RecentAccess>? = null
+    /** Refused once this session: open without asking again until the app restarts. */
+    private var mediaLocationRefused = false
 
     /** Owns the extracted motion-photo video of the open source, if any. */
     private var currentResolved: ResolvedMedia? = null
@@ -256,6 +280,14 @@ class PlayerViewModel : ViewModel() {
 
     fun initialize(context: Context) {
         appContext = context.applicationContext
+        val permissionContext = context.applicationContext
+        mediaLocationConsent = {
+            when {
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.Q -> MediaLocationConsent.NOT_APPLICABLE
+                OriginalMediaAccess.canReadOriginal(permissionContext) -> MediaLocationConsent.GRANTED
+                else -> MediaLocationConsent.NOT_GRANTED
+            }
+        }
         if (frameExtractor == null) {
             frameExtractor = FrameExtractor(context.applicationContext)
             frameExporter = FrameExporter(context.applicationContext)
@@ -305,7 +337,52 @@ class PlayerViewModel : ViewModel() {
      * videos play as they are; a still without a video, or a file that can no longer be
      * read, ends in [PlayerError.OpenFailed] instead of a player error.
      */
+    /** Test-only seam for the ACCESS_MEDIA_LOCATION state. */
+    internal fun setMediaLocationConsentForTesting(consent: () -> MediaLocationConsent) {
+        mediaLocationConsent = consent
+    }
+
+    /**
+     * Open what the user picked, from any route. With metadata preservation on, a
+     * content file on Android 10+ first waits for the location-access answer (asked at
+     * most once per session after a refusal), because MediaStore redacts location from
+     * reads made without it and the resolver caches what it reads.
+     */
     fun openMedia(uri: Uri, access: RecentAccess) {
+        if (resolveMedia == null) return
+        val needsConsent = _uiState.value.exportConfig.preserveMetadata &&
+            !mediaLocationRefused &&
+            mediaLocationConsent() == MediaLocationConsent.NOT_GRANTED &&
+            uri.scheme == ContentResolver.SCHEME_CONTENT
+        if (!needsConsent) {
+            resolveAndShow(uri, access)
+            return
+        }
+        clearVideoUri()
+        pendingOpen = uri to access
+        _uiState.update { it.copy(isOpening = true, awaitingMediaLocationConsent = true) }
+    }
+
+    /**
+     * The answer to the location-access request. Either way the waiting file opens; a
+     * refusal only means Android or its provider may leave location out, which is said
+     * once, and no other path is used to get it anyway.
+     */
+    fun onMediaLocationConsentResult(granted: Boolean) {
+        val (uri, access) = pendingOpen ?: return
+        pendingOpen = null
+        if (!granted) mediaLocationRefused = true
+        _uiState.update {
+            it.copy(awaitingMediaLocationConsent = false, showMediaLocationNotice = it.showMediaLocationNotice || !granted)
+        }
+        resolveAndShow(uri, access)
+    }
+
+    fun clearMediaLocationNotice() {
+        _uiState.update { it.copy(showMediaLocationNotice = false) }
+    }
+
+    private fun resolveAndShow(uri: Uri, access: RecentAccess) {
         val resolve = resolveMedia ?: return
         openJob?.cancel()
         clearVideoUri()
@@ -397,6 +474,7 @@ class PlayerViewModel : ViewModel() {
     fun clearVideoUri() {
         openJob?.cancel()
         openJob = null
+        pendingOpen = null
         val oldBitmap = _uiState.value.capturedBitmap
         val canRecycleImmediately = !isAnyExportRunning()
         releaseMediaSessions()
@@ -405,7 +483,8 @@ class PlayerViewModel : ViewModel() {
                 isMuted = it.isMuted,
                 rememberQuickSettings = it.rememberQuickSettings,
                 exportConfig = it.exportConfig,
-                customExportTreeUri = it.customExportTreeUri
+                customExportTreeUri = it.customExportTreeUri,
+                showMediaLocationNotice = it.showMediaLocationNotice
             )
         }
         // Recycle after state update so no observer can read a recycled bitmap.
