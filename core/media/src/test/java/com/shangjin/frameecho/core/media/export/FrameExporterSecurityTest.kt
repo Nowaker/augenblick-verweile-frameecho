@@ -198,7 +198,11 @@ class FrameExporterSecurityTest(private val motionPhoto: Boolean) {
     fun `original still export copies bytes and cleans up on storage failure`() = runTest {
         mockkStatic(BitmapFactory::class)
         val original = byteArrayOf(255.toByte(), 216.toByte(), 42, 43, 255.toByte(), 217.toByte())
-        val sourceUri = mockk<Uri>()
+        // A document-provider URI: read as provided, never converted to a MediaStore original.
+        val sourceUri = mockk<Uri> {
+            every { scheme } returns "content"
+            every { authority } returns "com.android.providers.media.documents"
+        }
         val frame = CapturedFrame(150_000, 4, 3, ColorSpaceInfo(), VideoMetadata(dateTimePositionUs = 150_000))
         every { context.cacheDir } returns temporaryFolder.root
         every { resolver.openInputStream(sourceUri) } answers { ByteArrayInputStream(original + videoBytes) }

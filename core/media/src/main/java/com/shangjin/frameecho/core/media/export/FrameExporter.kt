@@ -19,6 +19,7 @@ import androidx.annotation.RequiresApi
 import androidx.core.graphics.scale
 import com.shangjin.frameecho.core.media.colorspace.HdrToneMapper
 import com.shangjin.frameecho.core.media.metadata.MetadataWriter
+import com.shangjin.frameecho.core.media.source.OriginalMediaAccess
 import com.shangjin.frameecho.core.media.metadata.exportMetadata
 import com.shangjin.frameecho.core.model.CaptureTime
 import com.shangjin.frameecho.core.model.ExportFileName
@@ -85,7 +86,9 @@ class FrameExporter(private val context: Context) {
             val original = OriginalImage.fromMimeType(imageLength, mimeType)
             val staged = java.io.File.createTempFile("original_still_", ".image", context.cacheDir)
             temporary = staged
-            val input = context.contentResolver.openInputStream(sourceUri) ?: throw java.io.IOException("Cannot open original Motion Photo")
+            // The same bytes the resolver validated imageLength against: unredacted when allowed.
+            val input = context.contentResolver.openInputStream(OriginalMediaAccess.readUri(context, sourceUri))
+                ?: throw java.io.IOException("Cannot open original Motion Photo")
             input.use { source -> staged.outputStream().use { original.copy(source, it) } }
             val dimensions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(staged.absolutePath, dimensions)
