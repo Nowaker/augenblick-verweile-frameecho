@@ -32,6 +32,7 @@
     <string name="replay_5s">Replay 5s</string>
     <string name="next_frame">Next Frame</string>
     <string name="prev_frame">Previous Frame</string>
+    <string name="frame_step_position">Frame %1$d · %2$s</string>
     <string name="custom_file_name">Custom File Name</string>
     <string name="custom_file_name_hint">File name (without extension)</string>
     <string name="default_export_location">Default Export Location</string>

@@ -32,6 +32,7 @@
     <string name="replay_5s">后退 5 秒</string>
     <string name="next_frame">下一帧</string>
     <string name="prev_frame">上一帧</string>
+    <string name="frame_step_position">第 %1$d 帧 · %2$s</string>
     <string name="custom_file_name">自定义文件名</string>
     <string name="custom_file_name_hint">文件名（不含扩展名）</string>
     <string name="default_export_location">默认导出位置</string>

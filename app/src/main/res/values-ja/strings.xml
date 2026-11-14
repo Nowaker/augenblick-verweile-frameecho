@@ -32,6 +32,7 @@
     <string name="replay_5s">5秒戻る</string>
     <string name="next_frame">次のフレーム</string>
     <string name="prev_frame">前のフレーム</string>
+    <string name="frame_step_position">フレーム %1$d · %2$s</string>
     <string name="custom_file_name">カスタムファイル名</string>
     <string name="custom_file_name_hint">ファイル名（拡張子なし）</string>
     <string name="default_export_location">デフォルトのエクスポート先</string>

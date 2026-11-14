@@ -49,6 +49,8 @@ import androidx.media3.exoplayer.ScrubbingModeParameters
 import androidx.media3.exoplayer.SeekParameters
 import com.shangjin.frameecho.R
 import com.shangjin.frameecho.app.ui.components.TooltipWrapper
+import com.shangjin.frameecho.app.ui.player.framestep.FrameStepMath
+import com.shangjin.frameecho.app.ui.player.framestep.FrameStepRepeatSchedule
 import com.shangjin.frameecho.core.common.FileUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -67,6 +69,9 @@ private const val COARSE_SEEK_MIN_DELTA_MS = 40L
 
 /** How long the finger has to hold still before the preview is refined to the exact frame. */
 private const val SETTLE_REFINE_DELAY_MS = 90L
+
+/** How long the frame/time readout stays up after the last frame step. */
+private const val FRAME_STEP_FEEDBACK_LINGER_MS = 1_200L
 
 /**
  * Playback controls: seek slider with fine scrubbing, play/pause, skip forward/back,
@@ -111,6 +116,20 @@ fun PlaybackControls(
     isScrubPreviewLive: () -> Boolean = { false },
     /** Called when a frame-exact seek is issued, so the caller can retire the preview. */
     onExactSeekIssued: () -> Unit = {},
+    /** Whether holding a frame-step button keeps stepping along [repeatSchedule]. */
+    holdToRepeat: Boolean = true,
+    repeatSchedule: FrameStepRepeatSchedule = FrameStepRepeatSchedule.DEFAULT,
+    /**
+     * Called for every frame step with the position stepped to, and whether the player
+     * was seeked there (false when clamped at either end of the clip). Lets the caller
+     * request the decoded preview of exactly that frame.
+     */
+    onFrameStep: (targetMs: Long, seekIssued: Boolean) -> Unit = { _, _ -> },
+    /**
+     * Called when a press or hold of a frame-step button ends, with the final position
+     * and whether a final exact seek was issued to settle the player there.
+     */
+    onFrameStepEnded: (finalMs: Long, seekIssued: Boolean) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val hapticFeedback = LocalHapticFeedback.current
@@ -158,6 +177,56 @@ fun PlaybackControls(
     }
 
     val previewPositionMs = sliderTargetPositionMs ?: currentPositionMs
+
+    // Frame stepping. The target is tracked here rather than read back from the player,
+    // because during a hold the player is still catching up with earlier seeks while the
+    // next step is already due.
+    var frameStepTargetMs by remember { mutableStateOf<Long?>(null) }
+    var frameStepInScrubbingMode by remember { mutableStateOf(false) }
+    var frameStepFeedbackMs by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(frameStepTargetMs, frameStepFeedbackMs) {
+        if (frameStepTargetMs == null && frameStepFeedbackMs != null) {
+            delay(FRAME_STEP_FEEDBACK_LINGER_MS)
+            frameStepFeedbackMs = null
+        }
+    }
+
+    fun stepFrames(direction: Int, frames: Int) {
+        val baseMs = frameStepTargetMs ?: exoPlayer.currentPosition
+        val isRepeat = frameStepTargetMs != null
+        if (exoPlayer.isPlaying) exoPlayer.pause()
+        val targetMs = FrameStepMath.steppedPositionMs(baseMs, videoFrameRate, direction * frames, durationMs)
+        frameStepTargetMs = targetMs
+        frameStepFeedbackMs = targetMs
+        val seekIssued = targetMs != baseMs
+        if (seekIssued) {
+            // Repeats seek many times a second: scrubbing mode lets Media3 drop seeks that
+            // a newer one has already superseded instead of decoding every one of them.
+            if (isRepeat && !frameStepInScrubbingMode) {
+                exoPlayer.enterScrubbingMode()
+                frameStepInScrubbingMode = true
+            }
+            exoPlayer.setSeekParameters(SeekParameters.EXACT)
+            exoPlayer.seekTo(targetMs)
+            onUpdatePosition(targetMs)
+            hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
+        onFrameStep(targetMs, seekIssued)
+    }
+
+    fun endFrameStep() {
+        val targetMs = frameStepTargetMs ?: return
+        frameStepTargetMs = null
+        var finalSeekIssued = false
+        if (frameStepInScrubbingMode) {
+            frameStepInScrubbingMode = false
+            exoPlayer.setScrubbingModeEnabled(false)
+            exoPlayer.setSeekParameters(SeekParameters.EXACT)
+            exoPlayer.seekTo(targetMs)
+            finalSeekIssued = true
+        }
+        onFrameStepEnded(targetMs, finalSeekIssued)
+    }
     // Track last frame boundary for haptic feedback on frame crossings
     var lastFrameBoundaryMs by remember { mutableLongStateOf(0L) }
 
@@ -278,23 +347,7 @@ fun PlaybackControls(
                             if (wasPlayingBeforeSliderDrag) {
                                 exoPlayer.pause()
                             }
-                            // Scrubbing mode: Media3 1.8+ optimization. Every flag is spelled
-                            // out rather than relying on the library defaults, so a future
-                            // Media3 release can't quietly turn one of them off. Fractional
-                            // seek tolerance is deliberately left unset — setting it would
-                            // override the SeekParameters the seek pipeline above chooses.
-                            val scrubbingParams = ScrubbingModeParameters.Builder()
-                                .setDisabledTrackTypes(
-                                    setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_METADATA)
-                                )
-                                .setShouldIncreaseCodecOperatingRate(true)
-                                .setShouldEnableDynamicScheduling(true)
-                                .setAllowSkippingMediaCodecFlush(true)
-                                .setAllowSkippingKeyFrameReset(true)
-                                .setUseDecodeOnlyFlag(true)
-                                .build()
-                            exoPlayer.setScrubbingModeParameters(scrubbingParams)
-                            exoPlayer.setScrubbingModeEnabled(true)
+                            exoPlayer.enterScrubbingMode()
                             sliderDragStartFraction = clampedFraction
                             sliderDragStartPositionMs = currentPositionMs
                             fineScrubOffsetMs = 0L
@@ -429,6 +482,30 @@ fun PlaybackControls(
                         }
                     }
                 }
+
+                // Frame-step readout: updates on every step of a hold, so the user can
+                // see where they are even while the decoder is still catching up.
+                val feedbackMs = frameStepFeedbackMs
+                if (feedbackMs != null && !isSliderDragging) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(bottom = 4.dp)
+                    ) {
+                        Text(
+                            text = stringResource(
+                                R.string.frame_step_position,
+                                FrameStepMath.frameIndexAt(feedbackMs, videoFrameRate),
+                                FileUtils.formatDurationWithMillis(feedbackMs)
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
             }
 
             // Time labels + play controls
@@ -442,6 +519,8 @@ fun PlaybackControls(
                 Text(
                     text = if (isSliderDragging || isFineScrubbing) {
                         FileUtils.formatDurationWithMillis(previewPositionMs)
+                    } else if (frameStepFeedbackMs != null) {
+                        FileUtils.formatDurationWithMillis(currentPositionMs)
                     } else {
                         FileUtils.formatDuration(currentPositionMs)
                     },
@@ -456,27 +535,19 @@ fun PlaybackControls(
                 ) {
                     // Previous frame
                     if (frameDurationMs > 0L) {
-                        val prevFrameDesc = stringResource(R.string.prev_frame)
-                        TooltipWrapper(label = prevFrameDesc) {
-                            IconButton(
-                                onClick = {
-                                    if (exoPlayer.isPlaying) exoPlayer.pause()
-                                    exoPlayer.setSeekParameters(SeekParameters.EXACT)
-                                    val newPos = maxOf(0L, exoPlayer.currentPosition - frameDurationMs)
-                                    exoPlayer.seekTo(newPos)
-                                    onUpdatePosition(newPos)
-                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clearAndSetSemantics { contentDescription = prevFrameDesc }
-                            ) {
-                                Text(
-                                    text = "‹‹",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
+                        FrameStepButton(
+                            contentDescription = stringResource(R.string.prev_frame),
+                            enabled = !isExporting,
+                            holdToRepeat = holdToRepeat,
+                            schedule = repeatSchedule,
+                            onStep = { frames -> stepFrames(-1, frames) },
+                            onHoldEnd = { endFrameStep() }
+                        ) {
+                            Text(
+                                text = "‹‹",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     }
 
@@ -537,27 +608,19 @@ fun PlaybackControls(
 
                     // Next frame
                     if (frameDurationMs > 0L) {
-                        val nextFrameDesc = stringResource(R.string.next_frame)
-                        TooltipWrapper(label = nextFrameDesc) {
-                            IconButton(
-                                onClick = {
-                                    if (exoPlayer.isPlaying) exoPlayer.pause()
-                                    exoPlayer.setSeekParameters(SeekParameters.EXACT)
-                                    val newPos = minOf(durationMs, exoPlayer.currentPosition + frameDurationMs)
-                                    exoPlayer.seekTo(newPos)
-                                    onUpdatePosition(newPos)
-                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clearAndSetSemantics { contentDescription = nextFrameDesc }
-                            ) {
-                                Text(
-                                    text = "››",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
+                        FrameStepButton(
+                            contentDescription = stringResource(R.string.next_frame),
+                            enabled = !isExporting,
+                            holdToRepeat = holdToRepeat,
+                            schedule = repeatSchedule,
+                            onStep = { frames -> stepFrames(1, frames) },
+                            onHoldEnd = { endFrameStep() }
+                        ) {
+                            Text(
+                                text = "››",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     }
                 }
@@ -570,6 +633,27 @@ fun PlaybackControls(
             }
         }
     }
+}
+
+/**
+ * Media3 scrubbing mode (1.8+), used while dragging the slider and while a frame-step
+ * button repeats. Every flag is spelled out rather than relying on the library defaults,
+ * so a future Media3 release can't quietly turn one of them off. Fractional seek
+ * tolerance is deliberately left unset: it would override the SeekParameters chosen by
+ * the callers.
+ */
+private fun ExoPlayer.enterScrubbingMode() {
+    setScrubbingModeParameters(
+        ScrubbingModeParameters.Builder()
+            .setDisabledTrackTypes(setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_METADATA))
+            .setShouldIncreaseCodecOperatingRate(true)
+            .setShouldEnableDynamicScheduling(true)
+            .setAllowSkippingMediaCodecFlush(true)
+            .setAllowSkippingKeyFrameReset(true)
+            .setUseDecodeOnlyFlag(true)
+            .build()
+    )
+    setScrubbingModeEnabled(true)
 }
 
 /**

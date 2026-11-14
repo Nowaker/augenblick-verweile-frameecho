@@ -6,7 +6,9 @@ import android.net.Uri
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.shangjin.frameecho.core.media.extraction.AdjacentFramePreview
 import com.shangjin.frameecho.core.media.extraction.FrameExtractor
+import com.shangjin.frameecho.core.media.extraction.FramePreview
 import com.shangjin.frameecho.core.media.extraction.ScrubPreviewExtractor
 import com.shangjin.frameecho.core.media.export.FrameExporter
 import com.shangjin.frameecho.core.media.utils.LogUtils
@@ -97,6 +99,16 @@ class PlayerViewModel : ViewModel() {
     private val _scrubPreview = MutableStateFlow<Bitmap?>(null)
     val scrubPreview: StateFlow<Bitmap?> = _scrubPreview.asStateFlow()
 
+    /**
+     * Decoded preview of the frame most recently requested by frame stepping. The screen
+     * draws it only while its [FramePreview.positionMs] is the frame being stepped to, so
+     * a slow decode never shows a frame other than the one the readout names.
+     */
+    private val _framePreview = MutableStateFlow<FramePreview?>(null)
+    val framePreview: StateFlow<FramePreview?> = _framePreview.asStateFlow()
+    private var adjacentFramePreview: AdjacentFramePreview? = null
+    private var framePreviewForwardJob: Job? = null
+
     private var frameExtractor: FrameExtractor? = null
     private var frameExporter: FrameExporter? = null
     private var preferencesStore: PlayerPreferencesStore? = null
@@ -174,6 +186,7 @@ class PlayerViewModel : ViewModel() {
         clearThumbnailCache()
         // The preview session is bound to a single URI — tear it down before switching.
         releaseScrubPreview()
+        releaseFramePreview()
 
         _uiState.update {
             it.copy(
@@ -202,6 +215,7 @@ class PlayerViewModel : ViewModel() {
         cancelExport()
         clearThumbnailCache()
         releaseScrubPreview()
+        releaseFramePreview()
         _uiState.update {
             PlayerUiState(
                 isMuted = it.isMuted,
@@ -484,6 +498,41 @@ class PlayerViewModel : ViewModel() {
         _scrubPreview.value = null
     }
 
+    // ── Frame-step preview ──────────────────────────────────────────────
+
+    /**
+     * Decode [positionMs] for the frame-step overlay and prefetch its neighbours. Called
+     * on every step and when playback pauses, so the next step is usually a cache hit.
+     */
+    fun requestFramePreview(positionMs: Long) {
+        val state = _uiState.value
+        val uri = state.videoUri ?: return
+        val context = appContext ?: return
+        if (state.videoFrameRate <= 0f || state.durationMs <= 0L) return
+        val preview = adjacentFramePreview ?: AdjacentFramePreview(context, uri, viewModelScope).also { created ->
+            adjacentFramePreview = created
+            framePreviewForwardJob = viewModelScope.launch {
+                created.preview.collect { _framePreview.value = it }
+            }
+        }
+        preview.request(positionMs, state.videoFrameRate, state.durationMs)
+    }
+
+    /**
+     * Close the frame-step preview decoder. Returns the job that completes once the
+     * native decoder has really let go, for callers that must wait before deleting
+     * the file it reads.
+     */
+    private fun releaseFramePreview(): Job? {
+        framePreviewForwardJob?.cancel()
+        framePreviewForwardJob = null
+        val preview = adjacentFramePreview ?: return null
+        adjacentFramePreview = null
+        preview.close()
+        _framePreview.value = null
+        return viewModelScope.launch { preview.release() }
+    }
+
     // ── Frame capture ───────────────────────────────────────────────────
 
     /**
@@ -632,6 +681,9 @@ class PlayerViewModel : ViewModel() {
         clearThumbnailCache(recycleBitmaps = true)
         // Same for the preview session: it owns a decoder and a GL context.
         releaseScrubPreview()
+        // viewModelScope is already cancelled, which stops the worker and releases its decoder.
+        adjacentFramePreview?.close()
+        adjacentFramePreview = null
     }
 
     private fun beginBitmapExportUsage() {

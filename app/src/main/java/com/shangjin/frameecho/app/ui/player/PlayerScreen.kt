@@ -56,6 +56,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import com.shangjin.frameecho.R
+import com.shangjin.frameecho.app.settings.AppSettings
 import com.shangjin.frameecho.app.ui.components.LEGACY_ONBOARDING_STEP_KEYS
 import com.shangjin.frameecho.app.ui.components.OnboardingManager
 import com.shangjin.frameecho.app.ui.components.OnboardingOverlay
@@ -87,6 +88,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 @Composable
 fun PlayerScreen(
     viewModel: PlayerViewModel = viewModel(),
+    appSettings: AppSettings = AppSettings(),
     onNavigateToAbout: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -205,6 +207,23 @@ fun PlayerScreen(
         }
     }
 
+    // Frame-step overlay. While stepping, the decoded preview of the frame being stepped
+    // to covers the surface; it stays until the player has rendered that frame itself.
+    // There is deliberately no timeout: retiring early would flash the frame the player
+    // is still leaving. Every path that ends stepping (render, playback, video change)
+    // clears it instead.
+    val framePreviewState = viewModel.framePreview.collectAsStateWithLifecycle()
+    var frameStepHolding by remember { mutableStateOf(false) }
+    var frameStepOverlayMs by remember { mutableStateOf<Long?>(null) }
+    var frameStepLastSeekMs by remember { mutableStateOf<Long?>(null) }
+    var frameStepRenderedMs by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(uiState.videoUri) {
+        frameStepHolding = false
+        frameStepOverlayMs = null
+        frameStepLastSeekMs = null
+        frameStepRenderedMs = null
+    }
+
     // Capture flash effect
     var showCaptureFlash by remember { mutableStateOf(false) }
 
@@ -298,12 +317,22 @@ fun PlayerScreen(
                     awaitingSettledFrame = false
                     viewModel.clearScrubPreview()
                 }
+                frameStepRenderedMs = frameStepLastSeekMs
+                if (!frameStepHolding && frameStepOverlayMs != null &&
+                    frameStepRenderedMs == frameStepOverlayMs
+                ) {
+                    frameStepOverlayMs = null
+                }
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 viewModel.setPlaying(isPlaying)
-                if (!isPlaying && !isScrubbing) {
+                if (isPlaying) {
+                    frameStepOverlayMs = null
+                } else if (!isScrubbing) {
                     viewModel.updatePosition(exoPlayer.currentPosition)
+                    // Warm the frame-step cache around where playback stopped.
+                    viewModel.requestFramePreview(exoPlayer.currentPosition)
                 }
             }
         }
@@ -481,7 +510,13 @@ fun PlayerScreen(
                             if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
                         },
                         onCancelExport = { viewModel.cancelExport() },
-                        scrubPreview = { scrubPreviewState.value },
+                        scrubPreview = {
+                            val stepTargetMs = frameStepOverlayMs
+                            framePreviewState.value
+                                ?.takeIf { stepTargetMs != null && it.positionMs == stepTargetMs }
+                                ?.bitmap
+                                ?: scrubPreviewState.value
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
@@ -521,7 +556,29 @@ fun PlayerScreen(
                             }
                         },
                         isScrubPreviewLive = { scrubPreviewState.value != null },
-                        onExactSeekIssued = { awaitingSettledFrame = true }
+                        onExactSeekIssued = { awaitingSettledFrame = true },
+                        holdToRepeat = appSettings.holdToRepeatEnabled,
+                        repeatSchedule = appSettings.repeatSchedule,
+                        onFrameStep = { targetMs, seekIssued ->
+                            frameStepHolding = true
+                            if (seekIssued) {
+                                frameStepOverlayMs = targetMs
+                                frameStepLastSeekMs = targetMs
+                                viewModel.requestFramePreview(targetMs)
+                            }
+                        },
+                        onFrameStepEnded = { finalMs, finalSeekIssued ->
+                            frameStepHolding = false
+                            if (finalSeekIssued) {
+                                frameStepLastSeekMs = finalMs
+                                frameStepRenderedMs = null
+                            }
+                            // Nothing left to wait for when the player already shows the
+                            // final frame, or never moved (clamped at either end).
+                            if (frameStepRenderedMs == finalMs || frameStepLastSeekMs != finalMs) {
+                                frameStepOverlayMs = null
+                            }
+                        }
                     )
 
                     // Thumbnail timeline strip
