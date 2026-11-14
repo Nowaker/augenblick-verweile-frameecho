@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="media_location_denied_notice">Location access not allowed. Android or the app providing a file may remove where photos and videos were taken; other metadata is kept.</string>
+</resources>

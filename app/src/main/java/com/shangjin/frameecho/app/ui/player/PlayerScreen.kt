@@ -266,6 +266,17 @@ fun PlayerScreen(
         }
     })
 
+    // Asked when a file is opened with metadata preservation on, never at launch: reading
+    // it without this permission makes MediaStore strip location from photos and videos.
+    val mediaLocationLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted: Boolean -> viewModel.onMediaLocationConsentResult(granted) }
+    LaunchedEffect(uiState.awaitingMediaLocationConsent) {
+        if (uiState.awaitingMediaLocationConsent && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            mediaLocationLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
+        }
+    }
+
     val writePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted: Boolean ->
@@ -485,6 +496,14 @@ fun PlayerScreen(
     val playbackErrorFormat = stringResource(R.string.error_playback)
     val originalUnavailableMsg = stringResource(R.string.error_original_unavailable)
     val goToCoverLabel = stringResource(R.string.go_to_cover)
+    val mediaLocationNoticeMsg = stringResource(R.string.media_location_denied_notice)
+    LaunchedEffect(uiState.showMediaLocationNotice) {
+        if (uiState.showMediaLocationNotice) {
+            viewModel.clearMediaLocationNotice()
+            snackbarHostState.showSnackbar(message = mediaLocationNoticeMsg, duration = SnackbarDuration.Long)
+        }
+    }
+
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
             val message = when (error) {

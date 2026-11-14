@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="media_location_denied_notice">未允许访问位置信息。Android 或提供文件的应用可能会移除照片和视频的拍摄地点；其他元数据会保留。</string>
+</resources>
