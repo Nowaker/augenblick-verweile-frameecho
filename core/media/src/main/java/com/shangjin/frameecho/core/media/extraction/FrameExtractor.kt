@@ -3,8 +3,6 @@ package com.shangjin.frameecho.core.media.extraction
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
-import android.media.MediaExtractor
-import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.shangjin.frameecho.core.media.colorspace.ColorSpaceDetector
@@ -14,6 +12,7 @@ import com.shangjin.frameecho.core.media.utils.LogUtils
 import com.shangjin.frameecho.core.model.CapturedFrame
 import com.shangjin.frameecho.core.model.ColorSpaceInfo
 import com.shangjin.frameecho.core.model.VideoMetadata
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
@@ -43,6 +42,8 @@ class FrameExtractor(
 
     @Volatile
     private var cachedColorSpace: Pair<String, ColorSpaceInfo>? = null
+
+    private val frameTimestamps = FrameTimestampIndex(context)
 
     /**
      * Recycle the bitmap immediately.
@@ -90,7 +91,7 @@ class FrameExtractor(
         null,
         "Failed to extract frame with info"
     ) { retriever ->
-        val sampleTimestampUs = nearestSampleTimestampUs(videoUri, timestampUs)
+        val sampleTimestampUs = frameTimestamps.nearest(videoUri, timestampUs)
         val bitmap = extractFrameInternal(retriever, sampleTimestampUs) ?: return@useRetriever null
 
         val cacheKey = videoUri.toString()
@@ -135,40 +136,6 @@ class FrameExtractor(
         )
 
         Pair(bitmap, frame)
-    }
-
-    private fun nearestSampleTimestampUs(videoUri: Uri, timestampUs: Long): Long {
-        val extractor = MediaExtractor()
-        try {
-            extractor.setDataSource(context, videoUri, null)
-            val track = (0 until extractor.trackCount).firstOrNull { index ->
-                extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
-            } ?: throw IllegalArgumentException("The selected file has no video track")
-            extractor.selectTrack(track)
-            extractor.seekTo(timestampUs.coerceAtLeast(0L), MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-            var nearestUs = -1L
-            var distanceUs = Long.MAX_VALUE
-            while (extractor.sampleTime >= 0L) {
-                val candidateUs = extractor.sampleTime
-                val candidateDistanceUs = kotlin.math.abs(candidateUs - timestampUs)
-                if (candidateDistanceUs < distanceUs ||
-                    (candidateDistanceUs == distanceUs && candidateUs < nearestUs)
-                ) {
-                    nearestUs = candidateUs
-                    distanceUs = candidateDistanceUs
-                }
-                // Encoded B frames are not ordered by presentation time. Include
-                // the entire GOP through the next sync sample before choosing.
-                if (candidateUs > timestampUs &&
-                    extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0
-                ) break
-                if (!extractor.advance()) break
-            }
-            check(nearestUs >= 0L) { "The video contains no decodable frame samples" }
-            return nearestUs
-        } finally {
-            extractor.release()
-        }
     }
 
     /**
@@ -274,12 +241,14 @@ class FrameExtractor(
         videoUri: Uri,
         defaultValue: T,
         errorMessage: String,
-        block: (MediaMetadataRetriever) -> T
+        block: suspend (MediaMetadataRetriever) -> T
     ): T = withContext(Dispatchers.IO) {
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(context, videoUri)
             block(retriever)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: SecurityException) {
             // Propagate permission failures so the UI can show a specific
             // message instead of a generic "capture failed".
