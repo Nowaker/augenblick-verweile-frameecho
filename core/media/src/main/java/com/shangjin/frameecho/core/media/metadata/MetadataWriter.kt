@@ -2,7 +2,8 @@ package com.shangjin.frameecho.core.media.metadata
 
 import android.content.Context
 import androidx.exifinterface.media.ExifInterface
-import com.shangjin.frameecho.core.media.utils.DateTimeUtils
+import com.shangjin.frameecho.core.model.CaptureTime
+import com.shangjin.frameecho.core.model.CapturedFrame
 import com.shangjin.frameecho.core.media.utils.ExifUtils
 import com.shangjin.frameecho.core.media.utils.LogUtils
 import com.shangjin.frameecho.core.model.VideoMetadata
@@ -49,14 +50,14 @@ object MetadataWriter {
      * after this method returns.
      */
     internal fun writeExifData(exif: ExifInterface, metadata: VideoMetadata) {
-        // Date/Time
-        metadata.dateTime?.let { dateTime ->
-            val exifDate = DateTimeUtils.convertToExif(dateTime)
-            exifDate?.let {
-                exif.setAttribute(ExifInterface.TAG_DATETIME, it)
-                exif.setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, it)
-                exif.setAttribute(ExifInterface.TAG_DATETIME_DIGITIZED, it)
-            }
+        ExifMetadata.copyTo(exif, metadata.exifAttributes)
+        CaptureTime.parse(metadata.dateTime)?.let { captureTime ->
+            listOf(ExifInterface.TAG_DATETIME, ExifInterface.TAG_DATETIME_ORIGINAL,
+                ExifInterface.TAG_DATETIME_DIGITIZED).forEach { exif.setAttribute(it, captureTime.exifDateTime) }
+            listOf(ExifInterface.TAG_SUBSEC_TIME, ExifInterface.TAG_SUBSEC_TIME_ORIGINAL,
+                ExifInterface.TAG_SUBSEC_TIME_DIGITIZED).forEach { exif.setAttribute(it, captureTime.exifSubseconds) }
+            listOf(ExifInterface.TAG_OFFSET_TIME, ExifInterface.TAG_OFFSET_TIME_ORIGINAL,
+                ExifInterface.TAG_OFFSET_TIME_DIGITIZED).forEach { exif.setAttribute(it, captureTime.exifOffset) }
         }
 
         // GPS Location
@@ -68,7 +69,7 @@ object MetadataWriter {
 
         // GPS Altitude
         metadata.altitude?.let { alt ->
-            exif.setAttribute(ExifInterface.TAG_GPS_ALTITUDE, ExifUtils.formatRational(alt))
+            exif.setAttribute(ExifInterface.TAG_GPS_ALTITUDE, ExifUtils.formatRational(kotlin.math.abs(alt)))
             exif.setAttribute(
                 ExifInterface.TAG_GPS_ALTITUDE_REF,
                 if (alt >= 0) "0" else "1"
@@ -117,13 +118,16 @@ object MetadataWriter {
         if (effectiveHeight > 0) {
             exif.setAttribute(ExifInterface.TAG_IMAGE_LENGTH, effectiveHeight.toString())
         }
+        if (effectiveWidth > 0) exif.setAttribute(ExifInterface.TAG_PIXEL_X_DIMENSION, effectiveWidth.toString())
+        if (effectiveHeight > 0) exif.setAttribute(ExifInterface.TAG_PIXEL_Y_DIMENSION, effectiveHeight.toString())
+        exif.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
 
         // Software tag
-        exif.setAttribute(ExifInterface.TAG_SOFTWARE, "FrameEcho")
+        if (ExifInterface.TAG_SOFTWARE !in metadata.exifAttributes) exif.setAttribute(ExifInterface.TAG_SOFTWARE, "FrameEcho")
 
         // User comment with video source info
         val comment = buildUserComment(metadata)
-        exif.setAttribute(ExifInterface.TAG_USER_COMMENT, comment)
+        if (ExifInterface.TAG_USER_COMMENT !in metadata.exifAttributes) exif.setAttribute(ExifInterface.TAG_USER_COMMENT, comment)
     }
 
     /**
@@ -151,3 +155,11 @@ object MetadataWriter {
             .take(100) // Truncate to 100 chars
     }
 }
+
+internal fun CapturedFrame.exportMetadata(width: Int, height: Int): VideoMetadata = metadata.copy(
+    dateTime = CaptureTime.atFrame(metadata, timestampUs)?.toIsoString(),
+    dateTimePositionUs = 0,
+    videoWidth = width,
+    videoHeight = height,
+    rotation = 0
+)

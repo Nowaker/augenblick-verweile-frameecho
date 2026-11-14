@@ -15,13 +15,21 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Rule
+import org.junit.rules.TemporaryFolder
+import com.shangjin.frameecho.core.model.CapturedFrame
+import com.shangjin.frameecho.core.model.ColorSpaceInfo
 
 class MetadataWriterTest {
+    @get:Rule
+    val temporaryFolder = TemporaryFolder()
 
     @Before
     fun setup() {
         mockkStatic(Log::class)
         every { Log.isLoggable(any(), any()) } returns false
+        every { Log.d(any(), any()) } returns 0
+        every { Log.w(any(), any<String>()) } returns 0
         mockkStatic(LogUtils::class)
     }
 
@@ -86,5 +94,38 @@ class MetadataWriterTest {
         val expectedCodecPart = "a".repeat(100)
         assertTrue("Comment should contain truncated codec", comment.contains(expectedCodecPart))
         assertFalse("Comment should not contain full length codec", comment.contains("a".repeat(101)))
+    }
+
+    @Test
+    fun `real JPEG retains source camera attributes and precise frame time without stale layout`() {
+        val image = temporaryFolder.newFile("frame.jpg")
+        image.writeBytes(byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xd9.toByte()))
+        val frame = CapturedFrame(2, 4, 3, ColorSpaceInfo(), VideoMetadata(
+            dateTime = "2023-12-31T23:59:59.999999+05:45", rotation = 90,
+            videoWidth = 1920, videoHeight = 1080, exifAttributes = mapOf(
+                ExifInterface.TAG_ARTIST to "Photographer",
+                ExifInterface.TAG_LENS_MODEL to "35mm",
+                ExifInterface.TAG_ORIENTATION to "6",
+                ExifInterface.TAG_IMAGE_WIDTH to "1920",
+                ExifInterface.TAG_XMP to "stale motion photo offsets"
+            )
+        ))
+        val exif = ExifInterface(image)
+        MetadataWriter.writeExifData(exif, frame.exportMetadata(4, 3))
+        exif.saveAttributes()
+
+        val saved = ExifInterface(image)
+        assertEquals("2024-01-01T00:00:00.000001+05:45", ExifMetadata.captureDateTime(saved))
+        assertEquals("000001", saved.getAttribute(ExifInterface.TAG_SUBSEC_TIME_ORIGINAL))
+        assertEquals("+05:45", saved.getAttribute(ExifInterface.TAG_OFFSET_TIME_ORIGINAL))
+        assertEquals("Photographer", saved.getAttribute(ExifInterface.TAG_ARTIST))
+        assertEquals("35mm", saved.getAttribute(ExifInterface.TAG_LENS_MODEL))
+        assertEquals("Photographer", ExifMetadata.read(saved)[ExifInterface.TAG_ARTIST])
+        assertEquals(1, saved.getAttributeInt(ExifInterface.TAG_ORIENTATION, 0))
+        assertEquals(4, saved.getAttributeInt(ExifInterface.TAG_IMAGE_WIDTH, 0))
+        assertEquals(3, saved.getAttributeInt(ExifInterface.TAG_IMAGE_LENGTH, 0))
+        org.junit.Assert.assertNull(saved.getAttribute(ExifInterface.TAG_XMP))
+        val block = JpegExifSegment.read(image)
+        org.junit.Assert.assertArrayEquals(byteArrayOf(69, 120, 105, 102, 0, 0), block.copyOfRange(0, 6))
     }
 }
