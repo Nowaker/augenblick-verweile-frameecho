@@ -37,6 +37,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import android.graphics.Bitmap
+import com.shangjin.frameecho.app.ui.player.framestep.FrameStepMath
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -52,7 +55,14 @@ import com.shangjin.frameecho.core.media.utils.LogUtils
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.SeekParameters
+import androidx.media3.exoplayer.video.VideoFrameMetadataListener
+import android.os.Handler
+import android.os.Looper
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import com.shangjin.frameecho.R
@@ -89,7 +99,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 fun PlayerScreen(
     viewModel: PlayerViewModel = viewModel(),
     appSettings: AppSettings = AppSettings(),
-    onNavigateToAbout: () -> Unit = {}
+    onOpenSystemPicker: () -> Unit = {},
+    onBrowseGallery: () -> Unit = {},
+    onOpenRecents: (() -> Unit)? = null,
+    onOpenAppSettings: (() -> Unit)? = null,
+    onNavigateToAbout: () -> Unit = {},
+    /** Called after the open media was closed with Back, e.g. to return to the gallery. */
+    onMediaClosed: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -121,13 +137,6 @@ fun PlayerScreen(
     // Initialize ViewModel
     LaunchedEffect(Unit) {
         viewModel.initialize(context)
-    }
-
-    // Video picker launcher
-    val videoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let { viewModel.setVideoUri(it) }
     }
 
     // SAF folder picker launcher for custom export directory
@@ -166,6 +175,7 @@ fun PlayerScreen(
         exoPlayer.stop()
         exoPlayer.clearMediaItems()
         viewModel.clearVideoUri()
+        onMediaClosed()
     }
 
     var pendingCaptureAfterPermission by remember { mutableStateOf(false) }
@@ -208,20 +218,38 @@ fun PlayerScreen(
     }
 
     // Frame-step overlay. While stepping, the decoded preview of the frame being stepped
-    // to covers the surface; it stays until the player has rendered that frame itself.
-    // There is deliberately no timeout: retiring early would flash the frame the player
-    // is still leaving. Every path that ends stepping (render, playback, video change)
-    // clears it instead.
+    // to covers the surface; during a hold it is the only thing drawing the steps. It stays
+    // until the player reports that the frame on screen is the final target. There is
+    // deliberately no timeout and no "first frame rendered" shortcut: a seek issued before
+    // the hold can still render late, and retiring on it would flash a frame the user has
+    // already left. Playback and video changes clear it as well.
     val framePreviewState = viewModel.framePreview.collectAsStateWithLifecycle()
     var frameStepHolding by remember { mutableStateOf(false) }
     var frameStepOverlayMs by remember { mutableStateOf<Long?>(null) }
-    var frameStepLastSeekMs by remember { mutableStateOf<Long?>(null) }
-    var frameStepRenderedMs by remember { mutableStateOf<Long?>(null) }
+    // The last preview that was the stepping target when it arrived. Kept while the next
+    // target is still decoding, so the overlay never falls back to the stale player frame.
+    var frameStepShownPreview by remember { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(uiState.videoUri) {
         frameStepHolding = false
         frameStepOverlayMs = null
-        frameStepLastSeekMs = null
-        frameStepRenderedMs = null
+    }
+    LaunchedEffect(Unit) {
+        snapshotFlow { framePreviewState.value to frameStepOverlayMs }.collect { (preview, targetMs) ->
+            when {
+                targetMs == null -> frameStepShownPreview = null
+                preview != null && preview.positionMs == targetMs -> frameStepShownPreview = preview.bitmap
+            }
+        }
+    }
+    LaunchedEffect(uiState.displayedFrameUs, frameStepHolding, frameStepOverlayMs, uiState.videoFrameRate) {
+        val targetMs = frameStepOverlayMs ?: return@LaunchedEffect
+        val displayedUs = uiState.displayedFrameUs ?: return@LaunchedEffect
+        val rate = uiState.videoFrameRate
+        if (!frameStepHolding && rate > 0f &&
+            FrameStepMath.frameIndexAt((displayedUs + 500L) / 1000L, rate) == FrameStepMath.frameIndexAt(targetMs, rate)
+        ) {
+            frameStepOverlayMs = null
+        }
     }
 
     // Capture flash effect
@@ -283,17 +311,25 @@ fun PlayerScreen(
         }
     }
 
+    val lastRenderedFrameUs = remember { AtomicLong(-1L) }
+    val playingForFrameMetadata = remember { AtomicBoolean(false) }
+    val displayedFramePosted = remember { AtomicBoolean(false) }
+    LaunchedEffect(uiState.videoUri) { lastRenderedFrameUs.set(-1L) }
+
     // Listen to player state changes + extract frame rate from video track
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 isVideoLoading = playbackState == Player.STATE_BUFFERING
                 if (playbackState == Player.STATE_READY) {
+                    viewModel.onPlaybackReady()
                     viewModel.updateDuration(exoPlayer.duration)
                     // Extract frame rate from ExoPlayer's selected video track
                     exoPlayer.videoFormat?.takeIf { it.frameRate > 0f }?.let { format ->
                         viewModel.updateVideoFrameRate(format.frameRate)
                     }
+                    // Open the frame-step decoder early, so the first held step is a cache hit.
+                    if (!exoPlayer.isPlaying) viewModel.requestFramePreview(exoPlayer.currentPosition)
                 }
             }
 
@@ -317,20 +353,25 @@ fun PlayerScreen(
                     awaitingSettledFrame = false
                     viewModel.clearScrubPreview()
                 }
-                frameStepRenderedMs = frameStepLastSeekMs
-                if (!frameStepHolding && frameStepOverlayMs != null &&
-                    frameStepRenderedMs == frameStepOverlayMs
-                ) {
-                    frameStepOverlayMs = null
-                }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                // Decoder or source failures would otherwise leave a frozen black surface.
+                exoPlayer.stop()
+                exoPlayer.clearMediaItems()
+                viewModel.onPlaybackError(error.errorCodeName)
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
+                playingForFrameMetadata.set(isPlaying)
                 viewModel.setPlaying(isPlaying)
                 if (isPlaying) {
                     frameStepOverlayMs = null
                 } else if (!isScrubbing) {
-                    viewModel.updatePosition(exoPlayer.currentPosition)
+                    // Paused: the frame on screen is the selection, not the playback clock.
+                    val renderedUs = lastRenderedFrameUs.get()
+                    if (renderedUs >= 0L) viewModel.onPausedAtFrame(renderedUs)
+                    else viewModel.updatePosition(exoPlayer.currentPosition)
                     // Warm the frame-step cache around where playback stopped.
                     viewModel.requestFramePreview(exoPlayer.currentPosition)
                 }
@@ -338,7 +379,24 @@ fun PlayerScreen(
         }
         exoPlayer.addListener(listener)
 
+        // The frame actually on screen while paused: what a capture takes and names. Called
+        // on the playback thread for every rendered frame, so only the newest presentation
+        // time is kept and at most one hop to the main thread is pending at a time.
+        val mainHandler = Handler(Looper.getMainLooper())
+        val frameMetadataListener = VideoFrameMetadataListener { presentationTimeUs, _, _, _ ->
+            lastRenderedFrameUs.set(presentationTimeUs)
+            if (!playingForFrameMetadata.get() && displayedFramePosted.compareAndSet(false, true)) {
+                mainHandler.post {
+                    displayedFramePosted.set(false)
+                    if (!playingForFrameMetadata.get()) viewModel.onDisplayedFrame(lastRenderedFrameUs.get())
+                }
+            }
+        }
+        exoPlayer.setVideoFrameMetadataListener(frameMetadataListener)
+
         onDispose {
+            exoPlayer.clearVideoFrameMetadataListener(frameMetadataListener)
+            mainHandler.removeCallbacksAndMessages(null)
             exoPlayer.removeListener(listener)
             exoPlayer.release()
         }
@@ -421,18 +479,39 @@ fun PlayerScreen(
     val captureErrorMsg = stringResource(R.string.error_capture_failed)
     val exportErrorMsgGeneric = stringResource(R.string.error_export_failed)
     val permissionErrorMsg = stringResource(R.string.error_permission_denied)
+    val noVideoMsg = stringResource(R.string.error_open_no_video)
+    val malformedMsg = stringResource(R.string.error_open_malformed)
+    val unreadableMsg = stringResource(R.string.error_open_unreadable)
+    val playbackErrorFormat = stringResource(R.string.error_playback)
+    val originalUnavailableMsg = stringResource(R.string.error_original_unavailable)
+    val goToCoverLabel = stringResource(R.string.go_to_cover)
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
             val message = when (error) {
                 is PlayerError.CaptureFailed -> captureErrorMsg
                 is PlayerError.PermissionDenied -> permissionErrorMsg
                 is PlayerError.ExportFailed -> error.detail ?: exportErrorMsgGeneric
+                is PlayerError.OpenFailed -> when (error.reason) {
+                    OpenFailure.NO_EMBEDDED_VIDEO -> noVideoMsg
+                    OpenFailure.MALFORMED_MOTION_PHOTO -> malformedMsg
+                    OpenFailure.UNREADABLE -> unreadableMsg
+                }
+                is PlayerError.PlaybackFailed -> playbackErrorFormat.format(error.detail ?: "?")
+                is PlayerError.OriginalStillUnavailable -> originalUnavailableMsg
             }
-            snackbarHostState.showSnackbar(
+            viewModel.clearError()
+            val coverMs = viewModel.uiState.value.coverAnchorUs?.let { it / 1000L }
+            val result = snackbarHostState.showSnackbar(
                 message = message,
+                actionLabel = if (error is PlayerError.OriginalStillUnavailable && coverMs != null) goToCoverLabel else null,
                 duration = SnackbarDuration.Long
             )
-            viewModel.clearError()
+            if (result == SnackbarResult.ActionPerformed && coverMs != null) {
+                exoPlayer.pause()
+                exoPlayer.setSeekParameters(SeekParameters.EXACT)
+                exoPlayer.seekTo(coverMs)
+                viewModel.updatePosition(coverMs)
+            }
         }
     }
 
@@ -441,11 +520,14 @@ fun PlayerScreen(
             modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
             topBar = {
                 PlayerTopBar(
-                    hasVideo = uiState.videoUri != null,
                     scrollBehavior = scrollBehavior,
-                    onSelectVideo = { videoPickerLauncher.launch("video/*") },
-                    onOpenSettings = { viewModel.toggleExportSettings() },
-                    onNavigateToAbout = onNavigateToAbout
+                    onOpenSystemPicker = onOpenSystemPicker,
+                    onOpenRecents = onOpenRecents,
+                    onOpenAppSettings = onOpenAppSettings,
+                    onNavigateToAbout = onNavigateToAbout,
+                    onOpenExportSettings = if (uiState.videoUri != null) {
+                        { viewModel.toggleExportSettings() }
+                    } else null
                 )
             },
             bottomBar = {
@@ -460,7 +542,10 @@ fun PlayerScreen(
                         onToggleMotionPhoto = {
                             viewModel.updateExportConfig(
                                 uiState.exportConfig.copy(
-                                    motionPhoto = !uiState.exportConfig.motionPhoto
+                                    motionPhoto = !uiState.exportConfig.motionPhoto,
+                                    // Copying the original still and a Motion Photo are exclusive.
+                                    originalImage = uiState.exportConfig.originalImage &&
+                                        uiState.exportConfig.motionPhoto
                                 )
                             )
                         },
@@ -511,11 +596,7 @@ fun PlayerScreen(
                         },
                         onCancelExport = { viewModel.cancelExport() },
                         scrubPreview = {
-                            val stepTargetMs = frameStepOverlayMs
-                            framePreviewState.value
-                                ?.takeIf { stepTargetMs != null && it.positionMs == stepTargetMs }
-                                ?.bitmap
-                                ?: scrubPreviewState.value
+                            frameStepShownPreview?.takeIf { frameStepOverlayMs != null } ?: scrubPreviewState.value
                         },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -559,25 +640,20 @@ fun PlayerScreen(
                         onExactSeekIssued = { awaitingSettledFrame = true },
                         holdToRepeat = appSettings.holdToRepeatEnabled,
                         repeatSchedule = appSettings.repeatSchedule,
-                        onFrameStep = { targetMs, seekIssued ->
+                        isFrameStepPreviewAvailable = { viewModel.isFramePreviewWorking },
+                        onFrameStep = { targetMs, moved ->
                             frameStepHolding = true
-                            if (seekIssued) {
+                            if (moved) {
                                 frameStepOverlayMs = targetMs
-                                frameStepLastSeekMs = targetMs
                                 viewModel.requestFramePreview(targetMs)
                             }
                         },
-                        onFrameStepEnded = { finalMs, finalSeekIssued ->
+                        onFrameStepEnded = { finalMs, _ ->
+                            // The overlay retires once the player displays this frame (see
+                            // the displayedFrameUs effect above); nothing to wait for if
+                            // the press never moved.
                             frameStepHolding = false
-                            if (finalSeekIssued) {
-                                frameStepLastSeekMs = finalMs
-                                frameStepRenderedMs = null
-                            }
-                            // Nothing left to wait for when the player already shows the
-                            // final frame, or never moved (clamped at either end).
-                            if (frameStepRenderedMs == finalMs || frameStepLastSeekMs != finalMs) {
-                                frameStepOverlayMs = null
-                            }
+                            if (frameStepOverlayMs != finalMs) frameStepOverlayMs = null
                         }
                     )
 
@@ -625,9 +701,10 @@ fun PlayerScreen(
                     // Frame info card
                     FrameInfoCard(capturedFrame = uiState.capturedFrame)
                 } else {
-                    // Empty state
                     EmptyState(
-                        onSelectVideo = { videoPickerLauncher.launch("video/*") }
+                        onOpenSystemPicker = onOpenSystemPicker,
+                        onBrowseGallery = onBrowseGallery,
+                        isOpening = uiState.isOpening
                     )
                 }
             }
@@ -635,14 +712,18 @@ fun PlayerScreen(
             // Export settings bottom sheet
             if (uiState.showExportSettings) {
                 ExportSettingsSheet(
-                    config = uiState.exportConfig,
+                    // Carries the frozen file-name clock, so the previewed name is the saved one.
+                    config = uiState.effectiveExportConfig,
                     onConfigChange = { viewModel.updateExportConfig(it) },
                     rememberQuickSettings = uiState.rememberQuickSettings,
                     onRememberQuickSettingsChange = { viewModel.setRememberQuickSettings(it) },
                     onDismiss = { viewModel.toggleExportSettings() },
                     customExportTreeUri = uiState.customExportTreeUri,
                     onPickCustomFolder = { folderPickerLauncher.launch(null) },
-                    onClearCustomFolder = { viewModel.setCustomExportTreeUri(null) }
+                    onClearCustomFolder = { viewModel.setCustomExportTreeUri(null) },
+                    previewFrame = uiState.previewFrame,
+                    originalStillAvailable = uiState.originalStillAvailable,
+                    originalStillMimeType = uiState.source?.originalImageMimeType
                 )
             }
         }

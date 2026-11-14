@@ -1,11 +1,16 @@
 package com.shangjin.frameecho.app.ui.player.components
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.VideoFile
-import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -14,6 +19,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -21,30 +30,44 @@ import com.shangjin.frameecho.BuildConfig
 import com.shangjin.frameecho.R
 import com.shangjin.frameecho.app.ui.components.TooltipWrapper
 
+/** The app-wide actions every screen's top bar offers. */
+data class TopBarActions(
+    val onOpenSystemPicker: () -> Unit,
+    val onOpenRecents: (() -> Unit)?,
+    val onOpenAppSettings: (() -> Unit)?,
+    val onNavigateToAbout: () -> Unit
+)
+
 /**
- * Top app bar for the player screen.
+ * Top app bar shared by the home, player, gallery and recent-files screens, so opening
+ * a file with the system picker and reaching recent files are always one tap away.
  *
- * Shows the app name with contextual action buttons:
- * - "Select Video" is always visible.
- * - "Export Settings" is visible only when a video is loaded.
- * - "About" is visible only on the empty (home) state.
+ * Export settings appear only while a video is open; app settings and About live in the
+ * overflow menu to keep the bar from crowding the title.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerTopBar(
-    hasVideo: Boolean,
-    scrollBehavior: TopAppBarScrollBehavior,
-    onSelectVideo: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onNavigateToAbout: () -> Unit
+    scrollBehavior: TopAppBarScrollBehavior?,
+    onOpenSystemPicker: () -> Unit,
+    onOpenRecents: (() -> Unit)?,
+    onOpenAppSettings: (() -> Unit)?,
+    onNavigateToAbout: () -> Unit,
+    title: String = stringResource(R.string.app_name),
+    onNavigateBack: (() -> Unit)? = null,
+    onOpenExportSettings: (() -> Unit)? = null,
+    extraActions: @Composable RowScope.() -> Unit = {}
 ) {
+    val appName = stringResource(R.string.app_name)
+    val forkTitle = stringResource(R.string.fork_toolbar_title)
+    val contextualTitle = title.takeIf { it != appName }
     TopAppBar(
         title = {
             Column {
                 Text(
-                    text = stringResource(R.string.fork_toolbar_title),
+                    text = contextualTitle?.let { "$forkTitle - $it" } ?: forkTitle,
                     style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
@@ -61,35 +84,54 @@ fun PlayerTopBar(
                 )
             }
         },
-        expandedHeight = 88.dp,
+        expandedHeight = if (contextualTitle == null) 88.dp else 104.dp,
+        navigationIcon = {
+            if (onNavigateBack != null) {
+                TooltipWrapper(label = stringResource(R.string.go_back)) {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.go_back))
+                    }
+                }
+            }
+        },
         actions = {
-            TooltipWrapper(label = stringResource(R.string.select_video)) {
-                IconButton(onClick = onSelectVideo) {
-                    Icon(
-                        Icons.Default.VideoFile,
-                        contentDescription = stringResource(R.string.select_video)
+            extraActions()
+            TooltipWrapper(label = stringResource(R.string.open_system_picker)) {
+                IconButton(onClick = onOpenSystemPicker) {
+                    Icon(Icons.Default.PhotoLibrary, contentDescription = stringResource(R.string.open_system_picker))
+                }
+            }
+            if (onOpenRecents != null) {
+                TooltipWrapper(label = stringResource(R.string.recent_files)) {
+                    IconButton(onClick = onOpenRecents) {
+                        Icon(Icons.Default.History, contentDescription = stringResource(R.string.recent_files))
+                    }
+                }
+            }
+            if (onOpenExportSettings != null) {
+                TooltipWrapper(label = stringResource(R.string.export_settings)) {
+                    IconButton(onClick = onOpenExportSettings) {
+                        Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.export_settings))
+                    }
+                }
+            }
+            var menuOpen by remember { mutableStateOf(false) }
+            TooltipWrapper(label = stringResource(R.string.more_options)) {
+                IconButton(onClick = { menuOpen = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more_options))
+                }
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                if (onOpenAppSettings != null) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.app_settings)) },
+                        onClick = { menuOpen = false; onOpenAppSettings() }
                     )
                 }
-            }
-            if (hasVideo) {
-                TooltipWrapper(label = stringResource(R.string.export_settings)) {
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = stringResource(R.string.export_settings)
-                        )
-                    }
-                }
-            }
-            if (!hasVideo) {
-                TooltipWrapper(label = stringResource(R.string.about)) {
-                    IconButton(onClick = onNavigateToAbout) {
-                        Icon(
-                            Icons.Outlined.Info,
-                            contentDescription = stringResource(R.string.about)
-                        )
-                    }
-                }
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.about)) },
+                    onClick = { menuOpen = false; onNavigateToAbout() }
+                )
             }
         },
         scrollBehavior = scrollBehavior,

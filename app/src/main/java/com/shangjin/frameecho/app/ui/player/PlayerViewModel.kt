@@ -6,17 +6,28 @@ import android.net.Uri
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.shangjin.frameecho.app.recents.RecentAccess
+import com.shangjin.frameecho.app.recents.RecentMediaRecorder
+import com.shangjin.frameecho.app.recents.RecentMediaStore
+import com.shangjin.frameecho.app.ui.player.source.LoadedSource
 import com.shangjin.frameecho.core.media.extraction.AdjacentFramePreview
 import com.shangjin.frameecho.core.media.extraction.FrameExtractor
 import com.shangjin.frameecho.core.media.extraction.FramePreview
 import com.shangjin.frameecho.core.media.extraction.ScrubPreviewExtractor
 import com.shangjin.frameecho.core.media.export.FrameExporter
+import com.shangjin.frameecho.core.media.metadata.MetadataExtractor
+import com.shangjin.frameecho.core.media.source.MediaSourceException
+import com.shangjin.frameecho.core.media.source.MediaSourceResolver
+import com.shangjin.frameecho.core.media.source.ResolvedMedia
 import com.shangjin.frameecho.core.media.utils.LogUtils
 import com.shangjin.frameecho.core.model.CapturedFrame
+import com.shangjin.frameecho.core.model.ColorSpaceInfo
 import com.shangjin.frameecho.core.model.ExportConfig
 import com.shangjin.frameecho.core.model.ExportDirectory
 import com.shangjin.frameecho.core.model.ExportFormat
 import com.shangjin.frameecho.core.model.ExportResult
+import com.shangjin.frameecho.core.model.VideoMetadata
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -27,6 +38,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.abs
 
 /**
  * Represents user-facing error types. Mapped to localized strings in the UI layer.
@@ -35,6 +48,20 @@ sealed class PlayerError {
     data object CaptureFailed : PlayerError()
     data object PermissionDenied : PlayerError()
     data class ExportFailed(val detail: String? = null) : PlayerError()
+    /** The picked file could not be opened; [detail] is the platform's explanation. */
+    data class OpenFailed(val reason: OpenFailure, val detail: String? = null) : PlayerError()
+    /** The player could not decode the media, e.g. an unsupported codec. */
+    data class PlaybackFailed(val detail: String? = null) : PlayerError()
+    /** Original-still export asked for away from the cover frame. */
+    data object OriginalStillUnavailable : PlayerError()
+}
+
+enum class OpenFailure {
+    /** A still picture without an embedded video (including Apple Live Photo stills). */
+    NO_EMBEDDED_VIDEO,
+    MALFORMED_MOTION_PHOTO,
+    /** The file is gone or the read grant has ended. */
+    UNREADABLE
 }
 
 /**
@@ -60,8 +87,57 @@ data class PlayerUiState(
     /** Custom export directory URI from SAF picker */
     val customExportTreeUri: Uri? = null,
     /** Video frame rate (fps) — used for frame-precise seeking in fine scrub mode */
-    val videoFrameRate: Float = 0f
+    val videoFrameRate: Float = 0f,
+    /** What the user opened; null while nothing is open or for media set directly. */
+    val source: LoadedSource? = null,
+    /** True while a picked file is being resolved into something playable. */
+    val isOpening: Boolean = false,
+    /** Presentation time of the frame on screen while paused, as reported by the player. */
+    val displayedFrameUs: Long? = null,
+    /** Metadata a capture of the open media would carry, original still merged in. */
+    val frameMetadata: VideoMetadata? = null,
+    /**
+     * Wall clock frozen for the `{timestamp}` part of the next file name. Set when the
+     * shown frame changes and after each save, never persisted, so the name previewed
+     * for a frame is exactly the name the save writes.
+     */
+    val fileNameTimestampMs: Long = 0L
 ) {
+    /** The frame a capture takes: the one on screen when known, else the position. */
+    val selectedFrameUs: Long
+        get() = displayedFrameUs ?: (currentPositionMs * 1000L)
+
+    /** Video position of the motion photo's still, when the open media is one. */
+    val coverAnchorUs: Long?
+        get() = source?.coverAnchorUs
+
+    /** Whether the encoded original still can be copied for the frame on screen. */
+    val originalStillAvailable: Boolean
+        get() = source?.canCopyOriginalStill == true &&
+            source.isAtCover(selectedFrameUs, videoFrameRate)
+
+    /** Export options as a save would use them, with the frozen file-name clock. */
+    val effectiveExportConfig: ExportConfig
+        get() = exportConfig.copy(fileNameTimestampMs = fileNameTimestampMs)
+
+    /**
+     * The frame a save would export right now, for previews such as the file name.
+     * Null until the media's metadata is known.
+     */
+    val previewFrame: CapturedFrame?
+        get() {
+            val metadata = frameMetadata ?: return null
+            return CapturedFrame(
+                timestampUs = selectedFrameUs,
+                width = metadata.videoWidth,
+                height = metadata.videoHeight,
+                colorSpace = ColorSpaceInfo(),
+                metadata = if (metadata.frameRate > 0f) metadata else metadata.copy(frameRate = videoFrameRate),
+                format = exportConfig.format,
+                quality = exportConfig.quality
+            )
+        }
+
     /**
      * Adaptive seek interval: ~5% of total duration, rounded to a "nice" value.
      * Clamped to [1s, 30s].
@@ -109,8 +185,26 @@ class PlayerViewModel : ViewModel() {
     private var adjacentFramePreview: AdjacentFramePreview? = null
     private var framePreviewForwardJob: Job? = null
 
+    /**
+     * True once the frame-step decoder has produced a frame for the open video. Until
+     * then (or if it can't open the file at all) held repeats seek the player instead.
+     */
+    var isFramePreviewWorking: Boolean = false
+        private set
+
     private var frameExtractor: FrameExtractor? = null
     private var frameExporter: FrameExporter? = null
+    private var resolveMedia: (suspend (Uri) -> ResolvedMedia)? = null
+    private var loadMetadata: (suspend (Uri) -> VideoMetadata)? = null
+    private var recentMedia: RecentMediaRecorder? = null
+    private var clock: () -> Long = System::currentTimeMillis
+
+    /** Owns the extracted motion-photo video of the open source, if any. */
+    private var currentResolved: ResolvedMedia? = null
+    private var openJob: Job? = null
+    private var metadataJob: Job? = null
+    private var decodedMetadata: VideoMetadata? = null
+    private var openRecordedFor: LoadedSource? = null
     private var preferencesStore: PlayerPreferencesStore? = null
     private var appContext: Context? = null
 
@@ -155,6 +249,9 @@ class PlayerViewModel : ViewModel() {
          * concurrent codec instances.
          */
         const val SCRUB_PREVIEW_IDLE_RELEASE_MS = 10_000L
+
+        /** Rounding between millisecond positions and microsecond presentation times. */
+        private const val DISPLAYED_FRAME_SLACK_MS = 1.0
     }
 
     fun initialize(context: Context) {
@@ -162,6 +259,16 @@ class PlayerViewModel : ViewModel() {
         if (frameExtractor == null) {
             frameExtractor = FrameExtractor(context.applicationContext)
             frameExporter = FrameExporter(context.applicationContext)
+        }
+        if (resolveMedia == null) {
+            resolveMedia = MediaSourceResolver(context.applicationContext)::resolve
+        }
+        if (loadMetadata == null) {
+            val appContext = context.applicationContext
+            loadMetadata = { uri -> withContext(Dispatchers.IO) { MetadataExtractor.extract(appContext, uri) } }
+        }
+        if (recentMedia == null) {
+            recentMedia = RecentMediaStore.create(context.applicationContext)
         }
         if (preferencesStore == null) {
             preferencesStore = PlayerPreferencesStore(context.applicationContext)
@@ -177,27 +284,105 @@ class PlayerViewModel : ViewModel() {
         this.frameExporter = exporter
     }
 
-    fun setVideoUri(uri: Uri) {
+    /**
+     * Test-only seams for opening media: the resolver, metadata reader, recent files
+     * and the wall clock used for file names.
+     */
+    internal fun setSourceDependenciesForTesting(
+        resolve: suspend (Uri) -> ResolvedMedia,
+        metadata: suspend (Uri) -> VideoMetadata,
+        recents: RecentMediaRecorder?,
+        clock: () -> Long
+    ) {
+        this.resolveMedia = resolve
+        this.loadMetadata = metadata
+        this.recentMedia = recents
+        this.clock = clock
+    }
+
+    /**
+     * Open what the user picked. Pictures are resolved to their embedded motion video,
+     * videos play as they are; a still without a video, or a file that can no longer be
+     * read, ends in [PlayerError.OpenFailed] instead of a player error.
+     */
+    fun openMedia(uri: Uri, access: RecentAccess) {
+        val resolve = resolveMedia ?: return
+        openJob?.cancel()
+        clearVideoUri()
+        _uiState.update { it.copy(isOpening = true) }
+        openJob = viewModelScope.launch {
+            val resolved = try {
+                resolve(uri)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: MediaSourceException) {
+                failOpen(
+                    when (e.reason) {
+                        MediaSourceException.Reason.NO_EMBEDDED_VIDEO -> OpenFailure.NO_EMBEDDED_VIDEO
+                        MediaSourceException.Reason.MALFORMED_MOTION_PHOTO -> OpenFailure.MALFORMED_MOTION_PHOTO
+                    },
+                    e.message
+                )
+                return@launch
+            } catch (e: Exception) {
+                failOpen(OpenFailure.UNREADABLE, e.message)
+                return@launch
+            }
+            try {
+                val mimeType = appContext?.let { context ->
+                    withContext(Dispatchers.IO) { runCatching { context.contentResolver.getType(uri) }.getOrNull() }
+                }
+                val source = LoadedSource(
+                    sourceUri = resolved.sourceUri,
+                    displayName = resolved.sourceFileName,
+                    mimeType = mimeType,
+                    access = access,
+                    sourceMetadata = resolved.sourceMetadata,
+                    coverPresentationUs = resolved.presentationTimestampUs,
+                    originalImageLength = resolved.originalImageLength,
+                    originalImageMimeType = resolved.originalImageMimeType
+                )
+                showMedia(resolved.videoUri, source, resolved)
+            } catch (e: CancellationException) {
+                // Superseded by another pick: this one never reached the player.
+                if (currentResolved !== resolved) resolved.release()
+                throw e
+            }
+        }
+    }
+
+    private fun failOpen(reason: OpenFailure, detail: String?) {
+        _uiState.update { it.copy(isOpening = false, error = PlayerError.OpenFailed(reason, detail)) }
+    }
+
+    fun setVideoUri(uri: Uri) = showMedia(uri, source = null, resolved = null)
+
+    private fun showMedia(uri: Uri, source: LoadedSource?, resolved: ResolvedMedia?) {
         // Capture reference BEFORE updating state so we can recycle safely
         // after the StateFlow no longer exposes the old bitmap.
         val oldBitmap = _uiState.value.capturedBitmap
         val canRecycleImmediately = !isAnyExportRunning()
-        cancelExport()
-        clearThumbnailCache()
-        // The preview session is bound to a single URI — tear it down before switching.
-        releaseScrubPreview()
-        releaseFramePreview()
+        releaseMediaSessions()
+        currentResolved = resolved
 
         _uiState.update {
             it.copy(
                 videoUri = uri,
+                source = source,
+                // A motion photo opens on its still when the file says where that is.
+                currentPositionMs = source?.coverAnchorUs?.div(1000L) ?: it.currentPositionMs,
+                isOpening = false,
                 capturedBitmap = null,
                 capturedFrame = null,
                 error = null,
                 thumbnailCount = 0,
-                videoFrameRate = 0f
+                videoFrameRate = 0f,
+                displayedFrameUs = null,
+                frameMetadata = null,
+                fileNameTimestampMs = clock()
             )
         }
+        loadFrameMetadata(uri)
 
         // Recycle only when not exporting — the export coroutine may still
         // reference the bitmap on Dispatchers.IO.
@@ -210,12 +395,11 @@ class PlayerViewModel : ViewModel() {
      * Clear the video URI and return to home state.
      */
     fun clearVideoUri() {
+        openJob?.cancel()
+        openJob = null
         val oldBitmap = _uiState.value.capturedBitmap
         val canRecycleImmediately = !isAnyExportRunning()
-        cancelExport()
-        clearThumbnailCache()
-        releaseScrubPreview()
-        releaseFramePreview()
+        releaseMediaSessions()
         _uiState.update {
             PlayerUiState(
                 isMuted = it.isMuted,
@@ -230,8 +414,105 @@ class PlayerViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Stop everything reading the current media, then delete the extracted motion-photo
+     * video once the decoders that opened it have actually let go.
+     */
+    private fun releaseMediaSessions() {
+        val capture = captureAndSaveJob
+        val thumbnails = batchThumbnailJob
+        val scrub = scrubPreviewJob
+        cancelExport()
+        clearThumbnailCache()
+        releaseScrubPreview()
+        val framePreviewReleased = releaseFramePreview()
+        metadataJob?.cancel()
+        metadataJob = null
+        decodedMetadata = null
+        val retired = currentResolved ?: return
+        currentResolved = null
+        viewModelScope.launch {
+            listOfNotNull(capture, thumbnails, scrub, framePreviewReleased).forEach { it.join() }
+            retired.release()
+        }
+    }
+
+    private fun loadFrameMetadata(uri: Uri) {
+        val load = loadMetadata ?: return
+        metadataJob = viewModelScope.launch {
+            val decoded = try {
+                load(uri)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                appContext?.let { LogUtils.w(it, "PlayerViewModel", "Metadata unavailable", e) }
+                VideoMetadata()
+            }
+            decodedMetadata = decoded
+            refreshFrameMetadata()
+        }
+    }
+
+    private fun refreshFrameMetadata() {
+        val decoded = decodedMetadata ?: return
+        _uiState.update { state -> state.copy(frameMetadata = state.source?.metadataFor(decoded) ?: decoded) }
+    }
+
+    /** Called once the player has prepared the media: a successful open for recents. */
+    fun onPlaybackReady() {
+        val source = _uiState.value.source ?: return
+        if (openRecordedFor === source) return
+        openRecordedFor = source
+        val recents = recentMedia ?: return
+        viewModelScope.launch {
+            recents.recordOpened(source.sourceUri, source.displayName, source.mimeType, source.access)
+        }
+    }
+
+    /** The player could not play the media: return home and say why. */
+    fun onPlaybackError(detail: String?) {
+        clearVideoUri()
+        _uiState.update { it.copy(error = PlayerError.PlaybackFailed(detail)) }
+    }
+
+    /**
+     * The player rendered a frame with presentation time [presentationUs]. Only tracked
+     * while paused, where it defines what a capture takes and what the file is named.
+     *
+     * An exact seek renders the first frame at or after its position, so a frame is
+     * accepted from just before the position up to one frame after it. Anything else is
+     * a late render of an older seek (say, the tap that started a backward hold) and
+     * would make a capture take a frame the user already left.
+     */
+    fun onDisplayedFrame(presentationUs: Long) {
+        val state = _uiState.value
+        if (state.isPlaying || state.displayedFrameUs == presentationUs) return
+        if (state.videoFrameRate > 0f) {
+            val aheadMs = presentationUs / 1000.0 - state.currentPositionMs
+            val frameMs = 1000.0 / state.videoFrameRate
+            if (aheadMs < -DISPLAYED_FRAME_SLACK_MS || aheadMs > frameMs - DISPLAYED_FRAME_SLACK_MS) return
+        }
+        _uiState.update { it.copy(displayedFrameUs = presentationUs, fileNameTimestampMs = clock()) }
+    }
+
+    /** Playback paused on the frame with presentation time [presentationUs]. */
+    fun onPausedAtFrame(presentationUs: Long) {
+        _uiState.update {
+            it.copy(
+                currentPositionMs = (presentationUs + 500L) / 1000L,
+                displayedFrameUs = presentationUs,
+                fileNameTimestampMs = clock()
+            )
+        }
+    }
+
     fun updatePosition(positionMs: Long) {
-        _uiState.update { it.copy(currentPositionMs = positionMs) }
+        _uiState.update { state ->
+            // A seek elsewhere makes the last rendered frame stale until the next one lands.
+            val frameMs = if (state.videoFrameRate > 0f) 1000.0 / state.videoFrameRate else 0.0
+            val displayed = state.displayedFrameUs?.takeIf { abs(it / 1000.0 - positionMs) <= frameMs.coerceAtLeast(1.0) }
+            state.copy(currentPositionMs = positionMs, displayedFrameUs = displayed)
+        }
     }
 
     fun updateDuration(durationMs: Long) {
@@ -247,7 +528,7 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun setPlaying(playing: Boolean) {
-        _uiState.update { it.copy(isPlaying = playing) }
+        _uiState.update { it.copy(isPlaying = playing, displayedFrameUs = if (playing) null else it.displayedFrameUs) }
     }
 
     fun updateVideoFrameRate(frameRate: Float) {
@@ -512,7 +793,10 @@ class PlayerViewModel : ViewModel() {
         val preview = adjacentFramePreview ?: AdjacentFramePreview(context, uri, viewModelScope).also { created ->
             adjacentFramePreview = created
             framePreviewForwardJob = viewModelScope.launch {
-                created.preview.collect { _framePreview.value = it }
+                created.preview.collect {
+                    if (it != null) isFramePreviewWorking = true
+                    _framePreview.value = it
+                }
             }
         }
         preview.request(positionMs, state.videoFrameRate, state.durationMs)
@@ -526,6 +810,7 @@ class PlayerViewModel : ViewModel() {
     private fun releaseFramePreview(): Job? {
         framePreviewForwardJob?.cancel()
         framePreviewForwardJob = null
+        isFramePreviewWorking = false
         val preview = adjacentFramePreview ?: return null
         adjacentFramePreview = null
         preview.close()
@@ -553,11 +838,24 @@ class PlayerViewModel : ViewModel() {
             _uiState.update { it.copy(isCapturing = true, isExporting = true, error = null, exportResult = null) }
 
             try {
-                val timestampUs = _uiState.value.currentPositionMs * 1000L
-                val result = extractor.extractFrameWithInfo(uri, timestampUs)
+                // Snapshot once: the name previewed for this frame and its metadata must
+                // be what the save writes, even if state moves on while it runs.
+                val selection = _uiState.value
+                val source = selection.source
+                val config = selection.effectiveExportConfig
+                val wantsOriginal = config.originalImage && !motionPhoto
+                if (wantsOriginal && !selection.originalStillAvailable) {
+                    _uiState.update {
+                        it.copy(isCapturing = false, isExporting = false, error = PlayerError.OriginalStillUnavailable)
+                    }
+                    return@launch
+                }
+                val result = extractor.extractFrameWithInfo(uri, selection.selectedFrameUs)
 
                 if (result != null) {
-                    val (bitmap, frame) = result
+                    val (bitmap, extracted) = result
+                    val frame = source?.let { extracted.copy(metadata = it.metadataFor(extracted.metadata)) }
+                        ?: extracted
                     // Capture old reference BEFORE updating state,
                     // then recycle AFTER so no observer reads a recycled bitmap.
                     val oldBitmap = _uiState.value.capturedBitmap
@@ -575,8 +873,18 @@ class PlayerViewModel : ViewModel() {
                     // Export immediately
                     val exportResult = try {
                         beginBitmapExportUsage()
-                        if (motionPhoto) {
-                            val motionConfig = _uiState.value.exportConfig.copy(motionPhoto = true)
+                        val originalFrame = if (wantsOriginal) source?.originalStillFrame(frame) else null
+                        if (originalFrame != null && source != null) {
+                            exporter.exportOriginalImage(
+                                sourceUri = source.sourceUri,
+                                imageLength = requireNotNull(source.originalImageLength),
+                                mimeType = requireNotNull(source.originalImageMimeType),
+                                frame = originalFrame,
+                                config = config,
+                                customExportTreeUri = customTreeUri
+                            )
+                        } else if (motionPhoto) {
+                            val motionConfig = config.copy(motionPhoto = true, originalImage = false)
                             exporter.exportMotionPhoto(
                                 videoUri = uri,
                                 bitmap = bitmap,
@@ -588,7 +896,7 @@ class PlayerViewModel : ViewModel() {
                             exporter.exportStaticFrame(
                                 bitmap = bitmap,
                                 frame = frame,
-                                config = _uiState.value.exportConfig,
+                                config = config.copy(originalImage = false),
                                 customExportTreeUri = customTreeUri
                             )
                         }
@@ -597,6 +905,13 @@ class PlayerViewModel : ViewModel() {
                     }
                     _uiState.update {
                         it.copy(isExporting = false, exportResult = exportResult)
+                    }
+                    if (exportResult is ExportResult.Success) {
+                        // The next save is a new selection with its own name.
+                        _uiState.update { it.copy(fileNameTimestampMs = clock()) }
+                        if (source != null) {
+                            recentMedia?.recordSaved(source.sourceUri, source.displayName, source.mimeType, source.access)
+                        }
                     }
                 } else {
                     _uiState.update {
@@ -639,7 +954,8 @@ class PlayerViewModel : ViewModel() {
 
     fun updateExportConfig(config: ExportConfig) {
         _uiState.update { state ->
-            state.copy(exportConfig = config.copy(muteAudio = state.isMuted))
+            // The file-name clock belongs to the frame selection, not to the settings.
+            state.copy(exportConfig = config.copy(muteAudio = state.isMuted, fileNameTimestampMs = null))
         }
         viewModelScope.launch {
             persistQuickSettingsIfEnabled()
@@ -684,6 +1000,9 @@ class PlayerViewModel : ViewModel() {
         // viewModelScope is already cancelled, which stops the worker and releases its decoder.
         adjacentFramePreview?.close()
         adjacentFramePreview = null
+        // Nothing can read the extracted video any more once the scope is gone.
+        currentResolved?.release()
+        currentResolved = null
     }
 
     private fun beginBitmapExportUsage() {

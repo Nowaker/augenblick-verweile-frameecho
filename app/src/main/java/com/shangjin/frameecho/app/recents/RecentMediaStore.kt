@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.core.net.toUri
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -18,6 +19,12 @@ import kotlinx.coroutines.withContext
 private val Context.recentMediaDataStore: DataStore<Preferences>
         by preferencesDataStore(name = "recent_media")
 
+/** Where the player reports successful opens and saves. */
+interface RecentMediaRecorder {
+    suspend fun recordOpened(uri: Uri, displayName: String, mimeType: String?, access: RecentAccess)
+    suspend fun recordSaved(uri: Uri, displayName: String, mimeType: String?, access: RecentAccess)
+}
+
 /**
  * Persists [RecentMediaHistory]. [onEvicted] receives entries that left the list, so the
  * caller can give back read grants nothing refers to any more.
@@ -26,16 +33,16 @@ class RecentMediaStore(
     private val dataStore: DataStore<Preferences>,
     private val clock: () -> Long = System::currentTimeMillis,
     private val onEvicted: (List<RecentMedia>) -> Unit = {}
-) {
+) : RecentMediaRecorder {
     val entries: Flow<List<RecentMedia>> = dataStore.data
         .map { RecentMediaCodec.decode(it[KEY_ENTRIES]) }
         .distinctUntilChanged()
 
-    suspend fun recordOpened(uri: Uri, displayName: String, mimeType: String?, access: RecentAccess) = update {
+    override suspend fun recordOpened(uri: Uri, displayName: String, mimeType: String?, access: RecentAccess) = update {
         RecentMediaHistory.recordOpened(it, uri.toString(), displayName, mimeType, access, clock())
     }
 
-    suspend fun recordSaved(uri: Uri, displayName: String, mimeType: String?, access: RecentAccess) = update {
+    override suspend fun recordSaved(uri: Uri, displayName: String, mimeType: String?, access: RecentAccess) = update {
         RecentMediaHistory.recordSaved(it, uri.toString(), displayName, mimeType, access, clock())
     }
 
@@ -60,7 +67,7 @@ class RecentMediaStore(
                 evicted.filter { it.access == RecentAccess.PERSISTED_GRANT }.forEach { entry ->
                     runCatching {
                         appContext.contentResolver.releasePersistableUriPermission(
-                            Uri.parse(entry.uri), Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            entry.uri.toUri(), Intent.FLAG_GRANT_READ_URI_PERMISSION
                         )
                     }
                 }
@@ -75,7 +82,7 @@ class RecentMediaStore(
         suspend fun isReadable(context: Context, entry: RecentMedia): Boolean = withContext(Dispatchers.IO) {
             try {
                 context.contentResolver.query(
-                    Uri.parse(entry.uri), arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
+                    entry.uri.toUri(), arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
                 )?.use { it.moveToFirst() } ?: false
             } catch (_: SecurityException) {
                 false
