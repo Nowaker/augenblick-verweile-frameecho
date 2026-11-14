@@ -120,11 +120,17 @@ fun PlaybackControls(
     holdToRepeat: Boolean = true,
     repeatSchedule: FrameStepRepeatSchedule = FrameStepRepeatSchedule.DEFAULT,
     /**
-     * Called for every frame step with the position stepped to, and whether the player
-     * was seeked there (false when clamped at either end of the clip). Lets the caller
-     * request the decoded preview of exactly that frame.
+     * Whether the adjacent-frame preview is decoding for this video. While it is, held
+     * repeats are shown by the preview alone and the player is seeked only once, on
+     * release; otherwise every repeat seeks the player.
      */
-    onFrameStep: (targetMs: Long, seekIssued: Boolean) -> Unit = { _, _ -> },
+    isFrameStepPreviewAvailable: () -> Boolean = { false },
+    /**
+     * Called for every frame step with the position stepped to, and whether it moved
+     * (false when clamped at either end of the clip). Lets the caller request the
+     * decoded preview of exactly that frame.
+     */
+    onFrameStep: (targetMs: Long, moved: Boolean) -> Unit = { _, _ -> },
     /**
      * Called when a press or hold of a frame-step button ends, with the final position
      * and whether a final exact seek was issued to settle the player there.
@@ -179,9 +185,11 @@ fun PlaybackControls(
     val previewPositionMs = sliderTargetPositionMs ?: currentPositionMs
 
     // Frame stepping. The target is tracked here rather than read back from the player,
-    // because during a hold the player is still catching up with earlier seeks while the
-    // next step is already due.
+    // because during a hold the player is not seeked on every step, and when it is, it
+    // is still catching up with earlier seeks while the next step is already due.
     var frameStepTargetMs by remember { mutableStateOf<Long?>(null) }
+    // Where the player was last told to be during this press.
+    var frameStepPlayerMs by remember { mutableStateOf<Long?>(null) }
     var frameStepInScrubbingMode by remember { mutableStateOf(false) }
     var frameStepFeedbackMs by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(frameStepTargetMs, frameStepFeedbackMs) {
@@ -192,40 +200,49 @@ fun PlaybackControls(
     }
 
     fun stepFrames(direction: Int, frames: Int) {
-        val baseMs = frameStepTargetMs ?: exoPlayer.currentPosition
         val isRepeat = frameStepTargetMs != null
+        val baseMs = frameStepTargetMs ?: exoPlayer.currentPosition
+        if (!isRepeat) frameStepPlayerMs = baseMs
         if (exoPlayer.isPlaying) exoPlayer.pause()
         val targetMs = FrameStepMath.steppedPositionMs(baseMs, videoFrameRate, direction * frames, durationMs)
         frameStepTargetMs = targetMs
         frameStepFeedbackMs = targetMs
-        val seekIssued = targetMs != baseMs
-        if (seekIssued) {
-            // Repeats seek many times a second: scrubbing mode lets Media3 drop seeks that
-            // a newer one has already superseded instead of decoding every one of them.
-            if (isRepeat && !frameStepInScrubbingMode) {
-                exoPlayer.enterScrubbingMode()
-                frameStepInScrubbingMode = true
+        val moved = targetMs != baseMs
+        if (moved) {
+            // A tap always seeks, so a single step settles exactly. Repeats are drawn by
+            // the adjacent-frame preview: seeking the player too would have two decoders
+            // fight over every step, and the picture would trail the readout.
+            if (!isRepeat || !isFrameStepPreviewAvailable()) {
+                // Without a preview, repeats seek many times a second: scrubbing mode lets
+                // Media3 drop seeks a newer one has already superseded.
+                if (isRepeat && !frameStepInScrubbingMode) {
+                    exoPlayer.enterScrubbingMode()
+                    frameStepInScrubbingMode = true
+                }
+                exoPlayer.setSeekParameters(SeekParameters.EXACT)
+                exoPlayer.seekTo(targetMs)
+                frameStepPlayerMs = targetMs
             }
-            exoPlayer.setSeekParameters(SeekParameters.EXACT)
-            exoPlayer.seekTo(targetMs)
             onUpdatePosition(targetMs)
             hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         }
-        onFrameStep(targetMs, seekIssued)
+        onFrameStep(targetMs, moved)
     }
 
     fun endFrameStep() {
         val targetMs = frameStepTargetMs ?: return
         frameStepTargetMs = null
-        var finalSeekIssued = false
+        val needsFinalSeek = frameStepInScrubbingMode || frameStepPlayerMs != targetMs
+        frameStepPlayerMs = null
         if (frameStepInScrubbingMode) {
             frameStepInScrubbingMode = false
             exoPlayer.setScrubbingModeEnabled(false)
+        }
+        if (needsFinalSeek) {
             exoPlayer.setSeekParameters(SeekParameters.EXACT)
             exoPlayer.seekTo(targetMs)
-            finalSeekIssued = true
         }
-        onFrameStepEnded(targetMs, finalSeekIssued)
+        onFrameStepEnded(targetMs, needsFinalSeek)
     }
     // Track last frame boundary for haptic feedback on frame crossings
     var lastFrameBoundaryMs by remember { mutableLongStateOf(0L) }
@@ -531,7 +548,7 @@ fun PlaybackControls(
                 // Play controls: prev frame, replay 5s, play/pause, forward 5s, next frame
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(0.dp)
                 ) {
                     // Previous frame
                     if (frameDurationMs > 0L) {

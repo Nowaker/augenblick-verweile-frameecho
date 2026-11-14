@@ -117,7 +117,7 @@ fun FrameStepButton(
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
-            .size(40.dp)
+            .size(48.dp)
             .alpha(if (enabled) 1f else 0.38f)
             .semantics {
                 role = Role.Button
@@ -147,7 +147,7 @@ fun FrameStepButton(
                 }
             }
             .focusable(enabled, interactionSource)
-            .indication(interactionSource, ripple(bounded = false, radius = 20.dp))
+            .indication(interactionSource, ripple(bounded = false, radius = 24.dp))
             .pointerInput(enabled) {
                 if (!enabled) return@pointerInput
                 awaitEachGesture {
