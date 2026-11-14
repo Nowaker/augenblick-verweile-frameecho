@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="export_options_done">Done</string>
+    <string name="export_copy_original_still">Copy original still</string>
+    <string name="export_heic_unavailable">HEIC encoding is unavailable: Android 9 or newer and a compatible encoder are required.</string>
+    <string name="export_original_still_explanation">Copies the original primary still at the Motion Photo cover unchanged. Source XMP is retained; appended video is excluded.</string>
+    <string name="export_original_still_unavailable">Original copy requires a Motion Photo with a JPEG or HEIC/HEIF primary still. A video frame has no standalone original image to copy.</string>
+    <string name="export_encoded_image_explanation">JPEG and HEIC encode a new image. Quality 100 does not copy unchanged source bytes.</string>
+    <string name="export_motion_heic_explanation">Motion Photo output uses JPEG (.jpg), even with HEIC selected. HEIC applies again when Motion Photo is off.</string>
+    <string name="export_motion_jpeg_explanation">Motion Photo output uses JPEG (.jpg) with an appended video clip.</string>
+    <string name="export_original_encoding_unchanged">Original copy keeps source quality, resolution and metadata unchanged. Encoding controls do not apply.</string>
+    <string name="export_motion_photo">Export Motion Photo</string>
+    <string name="export_mute_motion_audio">Mute exported motion audio</string>
+    <string name="export_name_source_position">Keep source base + position</string>
+    <string name="export_name_source_frame">Keep source base + frame</string>
+    <string name="export_name_template_label">Name or template (without extension)</string>
+    <string name="export_name_template_hint">Leave blank for automatic naming. Literal names get time and position suffixes. Unsafe characters are replaced and long output names are shortened.</string>
+    <string name="export_name_too_long">Use at most 80 characters. This edit has not been applied.</string>
+    <string name="export_name_incomplete_token">Complete each token in braces, such as {filename}. This edit has not been applied.</string>
+    <string name="export_name_unknown_token">Use only {filename}, {timestamp}, {position} or {frame}. This edit has not been applied.</string>
+    <string name="export_name_open_media">Open media to see its actual filename and token values.</string>
+    <string name="export_name_draft_not_applied">Fix the template to preview it. Export keeps the last valid name.</string>
+    <string name="export_name_preview">Export filename</string>
+    <string name="export_name_token_units">{filename}: source basename without extension. {timestamp}: chosen time in epoch milliseconds. {position}: video presentation time in microseconds, padded to 12 digits. {frame}: nearest estimated zero-based frame index, padded to 8 digits.</string>
+    <string name="export_name_frame_rate_unknown">Frame rate is unavailable, so {frame} is 00000000. Use {position} for an exact presentation time.</string>
+</resources>

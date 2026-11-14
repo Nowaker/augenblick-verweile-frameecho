@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="export_options_done">完成</string>
+    <string name="export_copy_original_still">复制原始静态图</string>
+    <string name="export_heic_unavailable">无法使用 HEIC 编码：需要 Android 9 或更新版本及兼容的编码器。</string>
+    <string name="export_original_still_explanation">原样复制动态照片封面的原始主静态图。保留源 XMP，不包含末尾附加的视频。</string>
+    <string name="export_original_still_unavailable">复制原图需要包含 JPEG 或 HEIC/HEIF 主静态图的动态照片。视频帧没有可独立复制的原始图片。</string>
+    <string name="export_encoded_image_explanation">JPEG 和 HEIC 都会重新编码图片。质量 100 并不等于原样复制源文件字节。</string>
+    <string name="export_motion_heic_explanation">即使选择 HEIC，动态照片仍以 JPEG (.jpg) 输出。关闭动态照片后，HEIC 选择将重新生效。</string>
+    <string name="export_motion_jpeg_explanation">动态照片以 JPEG (.jpg) 输出，并在末尾附加视频片段。</string>
+    <string name="export_original_encoding_unchanged">复制原图保持源质量、分辨率和元数据不变。编码设置不适用。</string>
+    <string name="export_motion_photo">导出动态照片</string>
+    <string name="export_mute_motion_audio">静音导出的动态音频</string>
+    <string name="export_name_source_position">保留源基本名 + 位置</string>
+    <string name="export_name_source_frame">保留源基本名 + 帧号</string>
+    <string name="export_name_template_label">名称或模板（不含扩展名）</string>
+    <string name="export_name_template_hint">留空使用自动命名。普通名称会附加时间和位置。不可用字符会被替换，过长的输出名称会被缩短。</string>
+    <string name="export_name_too_long">最多输入 80 个字符。此编辑尚未应用。</string>
+    <string name="export_name_incomplete_token">请补全花括号中的变量，例如 {filename}。此编辑尚未应用。</string>
+    <string name="export_name_unknown_token">只能使用 {filename}、{timestamp}、{position} 或 {frame}。此编辑尚未应用。</string>
+    <string name="export_name_open_media">打开媒体后即可查看实际文件名和变量值。</string>
+    <string name="export_name_draft_not_applied">修正模板后即可预览。导出仍使用上一个有效名称。</string>
+    <string name="export_name_preview">导出文件名</string>
+    <string name="export_name_token_units">{filename}：不含扩展名的源基本名。{timestamp}：所选时间的 Unix 纪元毫秒数。{position}：视频显示时间，单位为微秒，补零至 12 位。{frame}：最接近的估算帧序号，从 0 开始，补零至 8 位。</string>
+    <string name="export_name_frame_rate_unknown">帧率未知，因此 {frame} 为 00000000。需要精确显示时间时请使用 {position}。</string>
+</resources>

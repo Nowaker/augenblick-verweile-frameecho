@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="export_options_done">完了</string>
+    <string name="export_copy_original_still">元の静止画をコピー</string>
+    <string name="export_heic_unavailable">HEICエンコードは利用できません。Android 9以降と対応エンコーダーが必要です。</string>
+    <string name="export_original_still_explanation">モーションフォトのカバーにある元の主静止画を変更せずにコピーします。元のXMPは保持し、末尾の動画は含めません。</string>
+    <string name="export_original_still_unavailable">元の画像のコピーには、JPEGまたはHEIC/HEIFの主静止画を含むモーションフォトが必要です。動画のフレームには、コピーできる独立した元画像がありません。</string>
+    <string name="export_encoded_image_explanation">JPEGとHEICは画像を新しくエンコードします。品質100でも元のバイト列をそのままコピーするわけではありません。</string>
+    <string name="export_motion_heic_explanation">HEICを選択していても、モーションフォトはJPEG (.jpg)で出力します。モーションフォトをオフにするとHEICが再び適用されます。</string>
+    <string name="export_motion_jpeg_explanation">モーションフォトは、動画クリップを末尾に追加したJPEG (.jpg)で出力します。</string>
+    <string name="export_original_encoding_unchanged">元の画像のコピーでは品質、解像度、メタデータを変更しません。エンコード設定は適用されません。</string>
+    <string name="export_motion_photo">モーションフォトを書き出す</string>
+    <string name="export_mute_motion_audio">書き出す動画の音声をミュート</string>
+    <string name="export_name_source_position">元のベース名 + 位置</string>
+    <string name="export_name_source_frame">元のベース名 + フレーム</string>
+    <string name="export_name_template_label">名前またはテンプレート (拡張子なし)</string>
+    <string name="export_name_template_hint">空欄で自動命名します。通常の名前には時刻と位置を追加します。使えない文字は置換し、長い出力名は短縮します。</string>
+    <string name="export_name_too_long">80文字以内で入力してください。この編集はまだ適用されていません。</string>
+    <string name="export_name_incomplete_token">{filename}のように、中かっこでトークンを完成させてください。この編集はまだ適用されていません。</string>
+    <string name="export_name_unknown_token">{filename}、{timestamp}、{position}、{frame}のみ使用できます。この編集はまだ適用されていません。</string>
+    <string name="export_name_open_media">メディアを開くと、実際のファイル名とトークンの値を確認できます。</string>
+    <string name="export_name_draft_not_applied">テンプレートを修正するとプレビューできます。書き出しには最後に有効だった名前を使います。</string>
+    <string name="export_name_preview">書き出すファイル名</string>
+    <string name="export_name_token_units">{filename}: 拡張子を除いた元のベース名。{timestamp}: 選択時刻のUNIXエポックからのミリ秒。{position}: 動画の表示時刻をマイクロ秒で表した12桁ゼロ埋め値。{frame}: 最も近い推定フレーム番号 (0始まり、8桁ゼロ埋め)。</string>
+    <string name="export_name_frame_rate_unknown">フレームレートが不明なため、{frame}は00000000になります。正確な表示時刻には{position}を使ってください。</string>
+</resources>
