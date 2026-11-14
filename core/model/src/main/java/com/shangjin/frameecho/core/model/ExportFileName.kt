@@ -4,7 +4,7 @@ import kotlin.math.roundToLong
 
 /** The same pure filename generator is used by previews and exports. */
 object ExportFileName {
-    private val TOKEN = Regex("\\{[^{}]+}")
+    private val TOKEN = Regex("\\{[^{}]+\\}")
     private val IMAGE_EXTENSION = Regex("\\.(jpe?g|heic|heif)$", RegexOption.IGNORE_CASE)
 
     /** Position is PTS in microseconds (12 digits); frame is a zero-based index (8 digits). */
