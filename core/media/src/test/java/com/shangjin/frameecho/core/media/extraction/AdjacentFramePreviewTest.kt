@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.util.Log
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkConstructor
@@ -107,6 +108,39 @@ class AdjacentFramePreviewTest {
         verify(exactly = 0) {
             anyConstructed<MediaMetadataRetriever>().getFrameAtTime(200_000L, any())
         }
+    }
+
+    @Test
+    fun `decoder failure retires the published preview so the player can take over`() = runBlocking {
+        val context = mockk<Context>(relaxed = true)
+        val uri = mockk<Uri>()
+        mockkConstructor(MediaMetadataRetriever::class)
+        mockkStatic(Bitmap::class)
+        mockkStatic(Log::class)
+        every { Log.w(any(), any<String>()) } returns 0
+        every { Log.w(any(), any(), any<Throwable>()) } returns 0
+        every { anyConstructed<MediaMetadataRetriever>().setDataSource(context, uri) } returns Unit
+        every { anyConstructed<MediaMetadataRetriever>().extractMetadata(any()) } returns "100"
+        every { anyConstructed<MediaMetadataRetriever>().release() } returns Unit
+        every { anyConstructed<MediaMetadataRetriever>().getFrameAtTime(100_000L, any()) } returns
+            mockk<Bitmap>(relaxed = true).also { bitmap ->
+                every { bitmap.allocationByteCount } returns 40_000
+            }
+        every { anyConstructed<MediaMetadataRetriever>().getFrameAtTime(200_000L, any()) } throws
+            IllegalStateException("Decoder stopped")
+        every { Bitmap.createScaledBitmap(any(), any(), any(), any()) } answers { firstArg() }
+        val preview = AdjacentFramePreview(context, uri, this)
+        try {
+            withTimeout(5_000L) {
+                preview.request(100L, 0f, 1_000L)
+                preview.preview.first { it?.positionMs == 100L }
+                preview.request(200L, 0f, 1_000L)
+                preview.preview.first { it == null }
+            }
+        } finally {
+            preview.release()
+        }
+        verify(exactly = 1) { anyConstructed<MediaMetadataRetriever>().release() }
     }
 
     @Test

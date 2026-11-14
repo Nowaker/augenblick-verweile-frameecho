@@ -112,6 +112,7 @@ class AdjacentFramePreview(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            _preview.value = null
             LogUtils.w(context, "AdjacentFramePreview", "Frame preview unavailable", e)
         } finally {
             requests.close()
