@@ -3,6 +3,8 @@ package com.shangjin.frameecho.core.media.extraction
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.shangjin.frameecho.core.media.colorspace.ColorSpaceDetector
@@ -88,7 +90,8 @@ class FrameExtractor(
         null,
         "Failed to extract frame with info"
     ) { retriever ->
-        val bitmap = extractFrameInternal(retriever, timestampUs) ?: return@useRetriever null
+        val sampleTimestampUs = nearestSampleTimestampUs(videoUri, timestampUs)
+        val bitmap = extractFrameInternal(retriever, sampleTimestampUs) ?: return@useRetriever null
 
         val cacheKey = videoUri.toString()
 
@@ -124,7 +127,7 @@ class FrameExtractor(
         }
 
         val frame = CapturedFrame(
-            timestampUs = timestampUs,
+            timestampUs = sampleTimestampUs,
             width = bitmap.width,
             height = bitmap.height,
             colorSpace = colorSpace!!,
@@ -132,6 +135,40 @@ class FrameExtractor(
         )
 
         Pair(bitmap, frame)
+    }
+
+    private fun nearestSampleTimestampUs(videoUri: Uri, timestampUs: Long): Long {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(context, videoUri, null)
+            val track = (0 until extractor.trackCount).firstOrNull { index ->
+                extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
+            } ?: throw IllegalArgumentException("The selected file has no video track")
+            extractor.selectTrack(track)
+            extractor.seekTo(timestampUs.coerceAtLeast(0L), MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+            var nearestUs = -1L
+            var distanceUs = Long.MAX_VALUE
+            while (extractor.sampleTime >= 0L) {
+                val candidateUs = extractor.sampleTime
+                val candidateDistanceUs = kotlin.math.abs(candidateUs - timestampUs)
+                if (candidateDistanceUs < distanceUs ||
+                    (candidateDistanceUs == distanceUs && candidateUs < nearestUs)
+                ) {
+                    nearestUs = candidateUs
+                    distanceUs = candidateDistanceUs
+                }
+                // Encoded B frames are not ordered by presentation time. Include
+                // the entire GOP through the next sync sample before choosing.
+                if (candidateUs > timestampUs &&
+                    extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0
+                ) break
+                if (!extractor.advance()) break
+            }
+            check(nearestUs >= 0L) { "The video contains no decodable frame samples" }
+            return nearestUs
+        } finally {
+            extractor.release()
+        }
     }
 
     /**
