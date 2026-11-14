@@ -63,3 +63,8 @@ node_modules/
 .claude/
 .vscode/
 
+.env*
+!.env.example
+.vibeterm/
+.omo/
+tmp/
