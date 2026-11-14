@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_settings_title">Settings</string>
+    <string name="app_settings_start_screen">Start screen</string>
+    <string name="app_settings_start_screen_hint">Shown when opening the app without a file. This choice is saved immediately.</string>
+    <string name="app_settings_start_welcome">Welcome</string>
+    <string name="app_settings_start_gallery">In-app gallery</string>
+    <string name="app_settings_hold_repeat">Hold to repeat frame steps</string>
+    <string name="app_settings_hold_repeat_hint">Tap to step one frame. Hold to repeat using the schedule below. This toggle is saved immediately.</string>
+    <string name="app_settings_repeat_disabled_hint">Hold-to-repeat is off. You can still edit and save its schedule.</string>
+    <string name="app_settings_repeat_schedule">Acceleration schedule</string>
+    <string name="app_settings_repeat_schedule_hint">The initial delay is measured from the button press. Stage start times are measured after repeating begins. Edits apply only when you save.</string>
+    <string name="app_settings_initial_delay_seconds">Initial hold delay (seconds)</string>
+    <string name="app_settings_schedule_limits">Stage count: 1-%1$d. Start times (seconds): 0-%2$d, increasing from 0. Speed (frames/sec): %3$s-%4$s.</string>
+    <string name="app_settings_stage_title">Stage %1$d</string>
+    <string name="app_settings_remove_stage">Remove stage %1$d</string>
+    <string name="app_settings_stage_start_seconds">Start time (seconds)</string>
+    <string name="app_settings_stage_frames_per_second">Speed (frames/sec)</string>
+    <string name="app_settings_add_stage">Add stage</string>
+    <string name="app_settings_reset_schedule">Reset to defaults</string>
+    <string name="app_settings_schedule_saved">Schedule saved</string>
+    <string name="app_settings_schedule_unsaved">Unsaved schedule changes</string>
+    <string name="app_settings_save_schedule">Save schedule</string>
+    <string name="app_settings_error_delay_range">Hold delay (seconds): enter a value from 0 to %1$d.</string>
+    <string name="app_settings_error_no_stages">Add at least one stage that starts at 0 seconds.</string>
+    <string name="app_settings_error_max_stages">Stage count must be between 1 and %1$d.</string>
+    <string name="app_settings_error_first_zero">The first stage must start at 0 seconds.</string>
+    <string name="app_settings_error_start_range">Start time (seconds): enter a value from 0 to %1$d.</string>
+    <string name="app_settings_error_stage_order">Start after the preceding stage. Stage start times must increase.</string>
+    <string name="app_settings_error_fps_range">Use a speed from %1$s to %2$s frames/sec.</string>
+    <string name="app_settings_error_delay_number">Enter a finite number of seconds for the hold delay.</string>
+    <string name="app_settings_error_stage_numbers">Enter numeric seconds and frames/sec in both stage fields.</string>
+    <string name="app_settings_discard_title">Discard schedule changes?</string>
+    <string name="app_settings_discard_message">The acceleration schedule has unsaved edits. Discard them and leave this screen?</string>
+    <string name="app_settings_discard_changes">Discard changes</string>
+    <string name="app_settings_keep_editing">Keep editing</string>
+</resources>

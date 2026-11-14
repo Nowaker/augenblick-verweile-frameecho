@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_settings_title">设置</string>
+    <string name="app_settings_start_screen">启动页面</string>
+    <string name="app_settings_start_screen_hint">未指定文件启动应用时显示的页面。选择会立即保存。</string>
+    <string name="app_settings_start_welcome">欢迎页</string>
+    <string name="app_settings_start_gallery">应用内图库</string>
+    <string name="app_settings_hold_repeat">长按连续逐帧移动</string>
+    <string name="app_settings_hold_repeat_hint">轻点移动一帧，长按按下方计划连续移动。此开关会立即保存。</string>
+    <string name="app_settings_repeat_disabled_hint">长按连续移动已关闭。仍可编辑并保存加速计划。</string>
+    <string name="app_settings_repeat_schedule">加速计划</string>
+    <string name="app_settings_repeat_schedule_hint">初始等待从按下按钮时开始计时。各阶段的开始时间从连续移动开始后计算。编辑内容仅在保存后生效。</string>
+    <string name="app_settings_initial_delay_seconds">长按初始等待（秒）</string>
+    <string name="app_settings_schedule_limits">最多 %1$d 个阶段，从 0 秒开始，后续时间递增且不超过 %2$d 秒。速度：每秒 %3$s-%4$s 帧。至少保留一个阶段。</string>
+    <string name="app_settings_stage_title">阶段 %1$d</string>
+    <string name="app_settings_remove_stage">移除阶段 %1$d</string>
+    <string name="app_settings_stage_start_seconds">开始时间（秒）</string>
+    <string name="app_settings_stage_frames_per_second">速度（帧/秒）</string>
+    <string name="app_settings_add_stage">添加阶段</string>
+    <string name="app_settings_reset_schedule">恢复默认值</string>
+    <string name="app_settings_schedule_saved">计划已保存</string>
+    <string name="app_settings_schedule_unsaved">计划有未保存的更改</string>
+    <string name="app_settings_save_schedule">保存计划</string>
+    <string name="app_settings_error_delay_range">等待时间必须为 0 到 %1$d 秒。</string>
+    <string name="app_settings_error_no_stages">请至少添加一个从 0 秒开始的阶段。</string>
+    <string name="app_settings_error_max_stages">最多保留 %1$d 个阶段。</string>
+    <string name="app_settings_error_first_zero">第一个阶段必须从 0 秒开始。</string>
+    <string name="app_settings_error_start_range">开始时间必须为 0 到 %1$d 秒。</string>
+    <string name="app_settings_error_stage_order">开始时间必须晚于上一个阶段，各阶段时间必须递增。</string>
+    <string name="app_settings_error_fps_range">速度必须为每秒 %1$s 到 %2$s 帧。</string>
+    <string name="app_settings_error_delay_number">请为等待秒数输入有限数值。</string>
+    <string name="app_settings_error_stage_numbers">请在阶段的两个字段中分别输入秒数和每秒帧数。</string>
+    <string name="app_settings_discard_title">放弃计划更改？</string>
+    <string name="app_settings_discard_message">加速计划有未保存的编辑。是否放弃并离开此页面？</string>
+    <string name="app_settings_discard_changes">放弃更改</string>
+    <string name="app_settings_keep_editing">继续编辑</string>
+</resources>

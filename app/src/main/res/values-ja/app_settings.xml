@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_settings_title">設定</string>
+    <string name="app_settings_start_screen">起動画面</string>
+    <string name="app_settings_start_screen_hint">ファイルを指定せずに起動したときの画面です。この選択はすぐに保存されます。</string>
+    <string name="app_settings_start_welcome">ようこそ</string>
+    <string name="app_settings_start_gallery">アプリ内ギャラリー</string>
+    <string name="app_settings_hold_repeat">長押しでコマ送りを繰り返す</string>
+    <string name="app_settings_hold_repeat_hint">タップで1フレーム進みます。長押しすると、下の設定に従って繰り返します。この切り替えはすぐに保存されます。</string>
+    <string name="app_settings_repeat_disabled_hint">長押しの繰り返しはオフです。速度設定の編集と保存はできます。</string>
+    <string name="app_settings_repeat_schedule">加速スケジュール</string>
+    <string name="app_settings_repeat_schedule_hint">最初の待ち時間はボタンを押してから計測します。各段階の開始時刻は繰り返し開始後の経過時間です。編集内容は保存すると適用されます。</string>
+    <string name="app_settings_initial_delay_seconds">長押しの待ち時間 (秒)</string>
+    <string name="app_settings_schedule_limits">最大%1$d段階です。最初は0秒で開始し、以降は最大%2$d秒まで時刻を増やしてください。速度: 毎秒%3$s-%4$sフレーム。少なくとも1段階を残してください。</string>
+    <string name="app_settings_stage_title">段階%1$d</string>
+    <string name="app_settings_remove_stage">段階%1$dを削除</string>
+    <string name="app_settings_stage_start_seconds">開始時刻 (秒)</string>
+    <string name="app_settings_stage_frames_per_second">速度 (フレーム/秒)</string>
+    <string name="app_settings_add_stage">段階を追加</string>
+    <string name="app_settings_reset_schedule">初期設定に戻す</string>
+    <string name="app_settings_schedule_saved">スケジュールは保存済みです</string>
+    <string name="app_settings_schedule_unsaved">スケジュールに未保存の変更があります</string>
+    <string name="app_settings_save_schedule">スケジュールを保存</string>
+    <string name="app_settings_error_delay_range">待ち時間は0-%1$d秒で入力してください。</string>
+    <string name="app_settings_error_no_stages">0秒で開始する段階を少なくとも1つ追加してください。</string>
+    <string name="app_settings_error_max_stages">段階は%1$d個以内にしてください。</string>
+    <string name="app_settings_error_first_zero">最初の段階は0秒で開始する必要があります。</string>
+    <string name="app_settings_error_start_range">開始時刻は0-%1$d秒で入力してください。</string>
+    <string name="app_settings_error_stage_order">前の段階より後に開始してください。開始時刻は昇順で指定します。</string>
+    <string name="app_settings_error_fps_range">速度は毎秒%1$s-%2$sフレームで入力してください。</string>
+    <string name="app_settings_error_delay_number">待ち時間の秒数を有限の数値で入力してください。</string>
+    <string name="app_settings_error_stage_numbers">段階の両方の欄に、秒数と毎秒のフレーム数を数値で入力してください。</string>
+    <string name="app_settings_discard_title">変更を破棄しますか?</string>
+    <string name="app_settings_discard_message">加速スケジュールに未保存の編集があります。破棄してこの画面を離れますか?</string>
+    <string name="app_settings_discard_changes">変更を破棄</string>
+    <string name="app_settings_keep_editing">編集を続ける</string>
+</resources>
