@@ -27,11 +27,11 @@ class DateTimeUtilsTest {
     @Test
     fun normalizeToIso_withVariousFormats() {
         val testCases = mapOf(
-            "20231027T103000.500Z" to "2023-10-27T10:30:00Z",
+            "20231027T103000.500Z" to "2023-10-27T10:30:00.500Z",
             "2023-10-27T10:30:00Z" to "2023-10-27T10:30:00Z",
             "2023-10-27T10:30:00+0000" to "2023-10-27T10:30:00Z",
             "2023-10-27T20:30:00+0800" to "2023-10-27T20:30:00+08:00",
-            "2023-10-27T10:30:00.500+0000" to "2023-10-27T10:30:00Z",
+            "2023-10-27T10:30:00.500+0000" to "2023-10-27T10:30:00.500Z",
             "20231027T103000" to "2023-10-27T10:30:00",
             "2023 10 27" to "2023-10-27T00:00:00",
             "2023-10-27T10:30:00" to "2023-10-27T10:30:00"
@@ -50,8 +50,8 @@ class DateTimeUtilsTest {
 
     @Test
     fun convertToExif_withIsoDate() {
-        assertEquals("2023:10:27 18:30:00", DateTimeUtils.convertToExif("2023-10-27T10:30:00Z"))
-        assertEquals("2023:10:27 18:30:00", DateTimeUtils.convertToExif("20231027T103000.500Z"))
+        assertEquals("2023:10:27 10:30:00", DateTimeUtils.convertToExif("2023-10-27T10:30:00Z"))
+        assertEquals("2023:10:27 10:30:00", DateTimeUtils.convertToExif("20231027T103000.500Z"))
         assertEquals("2023:10:27 20:30:00", DateTimeUtils.convertToExif("2023-10-27T20:30:00+0800"))
     }
 

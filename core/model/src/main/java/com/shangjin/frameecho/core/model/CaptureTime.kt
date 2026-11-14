@@ -8,6 +8,7 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeFormatterBuilder
 import java.time.format.DateTimeParseException
+import java.time.format.ResolverStyle
 import java.time.temporal.ChronoField
 import java.util.Locale
 
@@ -54,23 +55,34 @@ data class CaptureTime(
         private val LOCAL_FORMATS = BASE_PATTERNS.map { pattern ->
             DateTimeFormatterBuilder().appendPattern(pattern)
                 .appendFraction(ChronoField.NANO_OF_SECOND, 0, 9, true).toFormatter(Locale.US)
+                .withResolverStyle(ResolverStyle.STRICT)
         }
-        private val OFFSET_FORMATS = LOCAL_FORMATS.flatMap { base ->
+        private val OFFSET_FORMATS = LOCAL_FORMATS.map { base ->
             listOf("+HH:MM", "+HHMM", "+HH").map { pattern ->
                 DateTimeFormatterBuilder().append(base).appendOffset(pattern, "Z").toFormatter(Locale.US)
+                    .withResolverStyle(ResolverStyle.STRICT)
             }
         }
 
         fun parse(value: String?): CaptureTime? {
             val text = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            if (text.length < 10 || !text.first().isDigit()) return null
             val digits = text.substringAfter('.', "").takeWhile { it.isDigit() }.length.coerceAtMost(9)
-            for (formatter in OFFSET_FORMATS) {
+            val index = when {
+                text.getOrNull(8) == 'T' -> 1
+                text.getOrNull(4) == ':' -> 3
+                text.getOrNull(10) == 'T' -> 0
+                text.getOrNull(10) == ' ' -> 2
+                else -> 4
+            }
+            val hasOffset = text.endsWith('Z') || text.indexOf('+', 10) >= 0 || text.indexOf('-', 10) >= 0
+            for (formatter in if (hasOffset) OFFSET_FORMATS[index] else emptyList()) {
                 try {
                     val parsed = OffsetDateTime.parse(text, formatter)
                     return CaptureTime(parsed.toLocalDateTime(), parsed.offset, digits)
                 } catch (_: DateTimeParseException) { }
             }
-            for (formatter in LOCAL_FORMATS) {
+            for (formatter in if (hasOffset) emptyList() else listOf(LOCAL_FORMATS[index])) {
                 try {
                     return CaptureTime(LocalDateTime.parse(text, formatter), null, digits)
                 } catch (_: DateTimeParseException) { }

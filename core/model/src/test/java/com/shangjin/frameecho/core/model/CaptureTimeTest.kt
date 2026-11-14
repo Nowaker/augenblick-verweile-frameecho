@@ -32,6 +32,7 @@ class CaptureTimeTest {
         )
         cases.forEach { (input, expected) -> assertEquals(expected, CaptureTime.parse(input)!!.toIsoString()) }
         assertNull(CaptureTime.parse("invalid"))
+        assertNull(CaptureTime.parse("2023-02-30T10:30:00Z"))
         assertNull(CaptureTime.parse("2023:10:27 10:30:00")!!.exifOffset)
     }
 }
