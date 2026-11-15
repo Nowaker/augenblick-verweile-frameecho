@@ -139,4 +139,32 @@ class RotaryFrameAccumulatorTest {
 
         assertEquals(listOf(0, 0, 0, 1), steps.map { it.revolutionsCompleted })
     }
+
+    @Test
+    fun `four closed turns at screen-coordinate precision emit four revolution ticks`() {
+        val centerX = 540f
+        val centerY = 1_308f
+        val radius = 194.4f
+        fun point(angleDegrees: Double): Pair<Float, Float> {
+            val angle = degrees(angleDegrees)
+            return (centerX + radius * sin(angle).toFloat() - centerX) to
+                (centerY - radius * cos(angle).toFloat() - centerY)
+        }
+
+        for (start in listOf(0.0, 17.0, 90.0, 180.0, 270.0)) {
+            for (direction in listOf(-1, 1)) {
+                val dial = RotaryFrameAccumulator(framesPerTurn = 30, deadZoneRadius = 20f)
+                val (startX, startY) = point(start)
+                dial.begin(startX, startY)
+
+                val steps = (1..144).map { index ->
+                    val (x, y) = point(start + direction * index * 10.0)
+                    dial.move(x, y)
+                }
+
+                assertEquals("frames at $start in direction $direction", direction * 120, steps.sumOf { it.frames })
+                assertEquals("ticks at $start in direction $direction", 4, steps.sumOf { it.revolutionsCompleted })
+            }
+        }
+    }
 }

@@ -5,6 +5,7 @@ import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.floor
 import kotlin.math.hypot
+import kotlin.math.roundToLong
 
 /** What one pointer movement on the dial amounts to. */
 data class RotaryStep(
@@ -50,7 +51,7 @@ class RotaryFrameAccumulator(framesPerTurn: Int, private val deadZoneRadius: Flo
     private var rebaseFrames = 0L
     private var rebaseRotation = 0.0
     private var emittedFrames = 0L
-    private var hapticRotation = 0.0
+    private var hapticPhaseUnits = 0L
 
     /** Starts a gesture at [dx], [dy] from the centre. Emits nothing. */
     fun begin(dx: Float, dy: Float) {
@@ -58,7 +59,7 @@ class RotaryFrameAccumulator(framesPerTurn: Int, private val deadZoneRadius: Flo
         rebaseFrames = 0L
         rebaseRotation = 0.0
         emittedFrames = 0L
-        hapticRotation = 0.0
+        hapticPhaseUnits = 0L
         lastAngle = angleOf(dx, dy)
     }
 
@@ -72,9 +73,14 @@ class RotaryFrameAccumulator(framesPerTurn: Int, private val deadZoneRadius: Flo
         if (delta > PI) delta -= TWO_PI else if (delta < -PI) delta += TWO_PI
 
         rotation += delta
-        hapticRotation += delta
-        val revolutions = floor(abs(hapticRotation) / TWO_PI).toInt()
-        if (revolutions > 0) hapticRotation %= TWO_PI
+        // Integer differences of absolute phases telescope on a closed circle.
+        // Summing floating-point deltas can stop just short of its final tick.
+        var phaseDelta = phaseUnits(angle) - phaseUnits(previous)
+        if (phaseDelta > HAPTIC_TURN_UNITS / 2) phaseDelta -= HAPTIC_TURN_UNITS
+        else if (phaseDelta < -HAPTIC_TURN_UNITS / 2) phaseDelta += HAPTIC_TURN_UNITS
+        hapticPhaseUnits += phaseDelta
+        val revolutions = (abs(hapticPhaseUnits) / HAPTIC_TURN_UNITS).toInt()
+        if (revolutions > 0) hapticPhaseUnits %= HAPTIC_TURN_UNITS
 
         val target = rebaseFrames + floor((rotation - rebaseRotation) / TWO_PI * framesPerTurn + 0.5).toLong()
         val frames = (target - emittedFrames).toInt()
@@ -95,6 +101,9 @@ class RotaryFrameAccumulator(framesPerTurn: Int, private val deadZoneRadius: Flo
 
     private companion object {
         const val TWO_PI = 2 * PI
+        // A 32-bit turn is finer than the Float pointer coordinates it represents.
+        const val HAPTIC_TURN_UNITS = 4_294_967_296L
 
+        fun phaseUnits(angle: Double): Long = (angle / TWO_PI * HAPTIC_TURN_UNITS).roundToLong()
     }
 }
