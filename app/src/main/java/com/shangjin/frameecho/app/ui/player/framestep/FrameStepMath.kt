@@ -11,10 +11,10 @@ import kotlin.math.roundToLong
  * away from where the user thinks they are. Stepping instead converts the position to a
  * frame index, moves the index, and converts back from the exact fractional duration.
  *
- * Positions are the frame timestamp rounded to the nearest millisecond, the same key the
- * adjacent-frame preview cache uses. Rounding is safe both ways: an exact player seek
- * renders the first frame at or after the position, and capture picks the frame closest
- * to it, and either way a frame is at most half a millisecond from its rounded position.
+ * Seek positions are floored to whole milliseconds, matching the adjacent-frame cache.
+ * Exact playback seeks render the first frame at or after the requested position:
+ * rounding up would skip frames whose presentation time has a fractional millisecond.
+ * Converting back to an index still uses the nearest frame to avoid cumulative drift.
  */
 object FrameStepMath {
     /** Absorbs floating-point error at the end of the clip. */
@@ -27,7 +27,7 @@ object FrameStepMath {
 
     fun frameStartMs(index: Long, frameRate: Float): Long {
         if (frameRate <= 0f) return 0L
-        return (index.coerceAtLeast(0L) * 1000.0 / frameRate.toDouble()).roundToLong()
+        return (index.coerceAtLeast(0L) * 1000.0 / frameRate.toDouble()).toLong()
     }
 
     /** Index of the last frame that starts before [durationMs]. */

@@ -1,6 +1,7 @@
 package com.shangjin.frameecho.app.ui.player.framestep
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FrameStepMathTest {
@@ -11,15 +12,24 @@ class FrameStepMathTest {
         repeat(1000) { position = FrameStepMath.steppedPositionMs(position, 29.97f, 1, 0L) }
 
         assertEquals(1000L, FrameStepMath.frameIndexAt(position, 29.97f))
-        assertEquals(33_367L, position)
+        assertEquals(33_366L, position)
     }
 
     @Test
-    fun `frame positions use the nearest millisecond, the preview cache key`() {
+    fun `frame seeks never round past the requested presentation timestamp`() {
         assertEquals(33L, FrameStepMath.frameStartMs(1L, 30f))
-        assertEquals(67L, FrameStepMath.frameStartMs(2L, 30f))
+        assertEquals(66L, FrameStepMath.frameStartMs(2L, 30f))
+        assertEquals(1_966L, FrameStepMath.steppedPositionMs(2_000L, 30f, -1, 8_000L))
         assertEquals(1L, FrameStepMath.frameIndexAt(33L, 30f))
-        assertEquals(2L, FrameStepMath.frameIndexAt(67L, 30f))
+        assertEquals(2L, FrameStepMath.frameIndexAt(66L, 30f))
+        for (rate in listOf(23.976f, 29.97f, 30f, 59.94f, 60f)) {
+            for (index in 0L..240L) {
+                val presentationMs = index * 1000.0 / rate
+                val seekMs = FrameStepMath.frameStartMs(index, rate)
+                assertTrue("Seek $seekMs skips frame $index at $presentationMs ms ($rate fps)", seekMs <= presentationMs)
+                assertTrue("Seek $seekMs precedes frame $index by a whole millisecond", presentationMs - seekMs < 1.0)
+            }
+        }
     }
 
     @Test
@@ -36,7 +46,7 @@ class FrameStepMathTest {
     fun `stepping clamps to the first and last frame`() {
         assertEquals(0L, FrameStepMath.steppedPositionMs(10L, 30f, -5, 1_000L))
         // 1000 ms at 30 fps holds frames 0..29; frame 29 starts at 966.67 ms.
-        assertEquals(967L, FrameStepMath.steppedPositionMs(900L, 30f, 10, 1_000L))
+        assertEquals(966L, FrameStepMath.steppedPositionMs(900L, 30f, 10, 1_000L))
     }
 
     @Test
