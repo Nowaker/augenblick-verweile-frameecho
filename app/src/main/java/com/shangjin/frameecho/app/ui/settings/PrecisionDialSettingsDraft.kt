@@ -94,9 +94,14 @@ data class PrecisionDialSettingsDraft(
         private fun parseColor(text: String): ColorParse {
             val hex = text.trim().removePrefix("#")
             if (hex.isEmpty()) return ColorParse.Parsed(null)
-            if (hex.length != 6) return ColorParse.Invalid
+            if (hex.length != 6 || hex.any { it !in '0'..'9' && it !in 'a'..'f' && it !in 'A'..'F' }) return ColorParse.Invalid
             val rgb = hex.toIntOrNull(16) ?: return ColorParse.Invalid
             return ColorParse.Parsed(0xFF000000.toInt() or rgb)
         }
     }
 }
+
+internal fun PrecisionDialSettingsDraft.reconcileSavedDraft(
+    previous: PrecisionDialSettingsDraft,
+    current: PrecisionDialSettingsDraft
+): PrecisionDialSettingsDraft = if (this == previous) current else this

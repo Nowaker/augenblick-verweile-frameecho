@@ -58,4 +58,33 @@ class PrecisionDialSettingsDraftTest {
 
         assertEquals(Result.Invalid(setOf(PrecisionDialField.FRAMES_PER_TURN)), draft.toSettings())
     }
+
+    @Test
+    fun `signed six-character numbers are not RGB colors`() {
+        for (color in listOf("#-00001", "#+12345")) {
+            val draft = PrecisionDialSettingsDraft.from(custom).copy(guideColorHex = color)
+
+            assertEquals(color, Result.Invalid(setOf(PrecisionDialField.GUIDE_COLOR)), draft.toSettings())
+        }
+    }
+
+    @Test
+    fun `an older saved value does not replace a newer valid or unfinished edit`() {
+        val previous = PrecisionDialSettingsDraft.from(custom)
+        val saved = previous.copy(framesPerTurn = "30")
+
+        for (text in listOf("300", "")) {
+            val editing = previous.copy(framesPerTurn = text)
+
+            assertEquals(editing, editing.reconcileSavedDraft(previous, saved))
+        }
+    }
+
+    @Test
+    fun `an external settings change updates fields that have no newer edit`() {
+        val previous = PrecisionDialSettingsDraft.from(custom)
+        val saved = PrecisionDialSettingsDraft.from(PrecisionDialSettings.DEFAULT)
+
+        assertEquals(saved, previous.reconcileSavedDraft(previous, saved))
+    }
 }

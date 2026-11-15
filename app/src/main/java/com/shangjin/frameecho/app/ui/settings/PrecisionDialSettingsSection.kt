@@ -32,8 +32,8 @@ import com.shangjin.frameecho.app.ui.settings.PrecisionDialSettingsDraft.Result
  *
  * Each edit is saved through [onSettingsChange] as soon as every field holds a valid
  * value; until then the invalid fields are marked and nothing is stored, so the dial
- * never runs on half-typed numbers. A change of [settings] from elsewhere (such as the
- * reset button) replaces the fields, unless they already describe the same settings.
+ * never runs on half-typed numbers. Saved values replace the fields only when there is
+ * no newer edit, so delayed persistence never overwrites text still being typed.
  */
 @Composable
 fun PrecisionDialSettingsSection(
@@ -42,8 +42,11 @@ fun PrecisionDialSettingsSection(
     modifier: Modifier = Modifier
 ) {
     var draft by rememberSaveable(stateSaver = DraftSaver) { mutableStateOf(PrecisionDialSettingsDraft.from(settings)) }
+    var observedDraft by rememberSaveable(stateSaver = DraftSaver) { mutableStateOf(PrecisionDialSettingsDraft.from(settings)) }
     LaunchedEffect(settings) {
-        if ((draft.toSettings() as? Result.Valid)?.settings != settings) draft = PrecisionDialSettingsDraft.from(settings)
+        val current = PrecisionDialSettingsDraft.from(settings)
+        draft = draft.reconcileSavedDraft(observedDraft, current)
+        observedDraft = current
     }
     val result = draft.toSettings()
     val invalid = (result as? Result.Invalid)?.fields.orEmpty()
