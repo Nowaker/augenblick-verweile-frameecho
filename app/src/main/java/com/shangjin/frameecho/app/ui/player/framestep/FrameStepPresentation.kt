@@ -22,7 +22,7 @@ import com.shangjin.frameecho.core.media.extraction.FramePreview
 internal class FrameStepPresentation(player: ExoPlayer, viewModel: PlayerViewModel, haptics: HapticFeedback) {
     var holding by mutableStateOf(false)
     var overlayMs by mutableStateOf<Long?>(null)
-    var shown by mutableStateOf<FramePreview?>(null)
+    private var shown by mutableStateOf<FramePreview?>(null)
     val visiblePreview: FramePreview? get() = shown.takeIf { overlayMs != null }
     val steps = FrameStepState(player, {
         val state = viewModel.uiState.value
@@ -43,6 +43,14 @@ internal class FrameStepPresentation(player: ExoPlayer, viewModel: PlayerViewMod
         }
     })
 
+    fun updatePreview(preview: FramePreview?) {
+        val targetMs = overlayMs
+        when {
+            targetMs == null || preview == null -> shown = null
+            holding || preview.positionMs == targetMs -> shown = preview
+        }
+    }
+
     fun clear() {
         holding = false
         overlayMs = null
@@ -57,11 +65,8 @@ internal fun rememberFrameStepPresentation(player: ExoPlayer, viewModel: PlayerV
     val previews = viewModel.framePreview.collectAsStateWithLifecycle()
     DisposableEffect(presentation) { onDispose { presentation.steps.cancel() } }
     LaunchedEffect(presentation) {
-        snapshotFlow { previews.value to presentation.overlayMs }.collect { (preview, targetMs) ->
-            when {
-                targetMs == null -> presentation.shown = null
-                preview != null && (presentation.holding || preview.positionMs == targetMs) -> presentation.shown = preview
-            }
+        snapshotFlow { previews.value to presentation.overlayMs }.collect { (preview, _) ->
+            presentation.updatePreview(preview)
         }
     }
     LaunchedEffect(state.displayedFrameUs, presentation.holding, presentation.overlayMs, state.videoFrameRate) {
