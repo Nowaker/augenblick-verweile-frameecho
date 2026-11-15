@@ -4,9 +4,6 @@ package com.shangjin.frameecho.app.ui.player.components
 
 import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.Image
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.media3.common.util.UnstableApi
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -14,10 +11,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.calculatePan
-import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,18 +37,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -67,40 +55,6 @@ import com.shangjin.frameecho.R
 import kotlinx.coroutines.delay
 private val whiteColor60 = Color.White.copy(alpha = 0.6f)
 
-
-/**
- * Draws the scrub preview frame over the video surface.
- *
- * Its own composable so that a new preview frame — which arrives many times per drag —
- * only invalidates this leaf, and it mirrors the surface's zoom/pan so the preview lines
- * up with what it is covering.
- */
-@Composable
-private fun ScrubPreviewOverlay(
-    preview: () -> Bitmap?,
-    scale: () -> Float,
-    offsetX: () -> Float,
-    offsetY: () -> Float
-) {
-    // No isRecycled guard: preview frames are never recycled (see PlayerViewModel), and
-    // checking would only paper over the race — the bitmap could be recycled between the
-    // check and the draw pass that reads it.
-    val bitmap = preview() ?: return
-    val imageBitmap = remember(bitmap) { bitmap.asImageBitmap() }
-    Image(
-        bitmap = imageBitmap,
-        contentDescription = null,
-        contentScale = ContentScale.Fit,
-        modifier = Modifier
-            .fillMaxSize()
-            .graphicsLayer {
-                scaleX = scale()
-                scaleY = scale()
-                translationX = offsetX()
-                translationY = offsetY()
-            }
-    )
-}
 
 /**
  * Video surface with gesture handling (tap-to-play/pause, pinch-to-zoom, pan).
@@ -130,14 +84,10 @@ fun VideoSurface(
     overlay: @Composable BoxScope.() -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    // Zoom and pan state
-    var videoScale by remember { mutableFloatStateOf(1f) }
-    var videoOffsetX by remember { mutableFloatStateOf(0f) }
-    var videoOffsetY by remember { mutableFloatStateOf(0f) }
+    val transform = remember { VideoTransform() }
 
     // Tap-to-play/pause visual feedback (null = hidden)
     var tapFeedbackIsPlaying by remember { mutableStateOf<Boolean?>(null) }
-    var lastTapTimeMs by remember { mutableLongStateOf(0L) }
 
     // Derive colors with copy(alpha) directly. Do NOT use remember{} for Color.copy()
     // because Color is a value class (wrapping ULong). copy() is just lightweight bitwise math.
@@ -156,91 +106,7 @@ fun VideoSurface(
         }
     }
 
-    val currentOnTogglePlayPause by rememberUpdatedState(onTogglePlayPause)
-    val currentExoPlayer by rememberUpdatedState(exoPlayer)
-    val currentIsExporting by rememberUpdatedState(isExporting)
-
-    // Reset zoom when video changes (parent re-creates this composable)
-    Box(modifier = modifier.pointerInput(Unit) {
-                    awaitEachGesture {
-                        val firstDown = awaitFirstDown()
-                        if (currentIsExporting) return@awaitEachGesture
-                        var pastTouchSlop = false
-                        var isTap = true
-                        var hasMultiTouch = false
-
-                        while (true) {
-                            val event = awaitPointerEvent()
-
-                            if (event.changes.size > 1) {
-                                isTap = false
-                                hasMultiTouch = true
-                                val zoomChange = event.calculateZoom()
-                                val panChange = event.calculatePan()
-                                if (zoomChange != 1f || panChange != Offset.Zero) {
-                                    val newScale = (videoScale * zoomChange).coerceIn(1f, 3f)
-                                    val maxOffsetX = (size.width * (newScale - 1f)) / 2f
-                                    val maxOffsetY = (size.height * (newScale - 1f)) / 2f
-                                    videoScale = newScale
-                                    videoOffsetX =
-                                        (videoOffsetX + panChange.x).coerceIn(-maxOffsetX, maxOffsetX)
-                                    videoOffsetY =
-                                        (videoOffsetY + panChange.y).coerceIn(-maxOffsetY, maxOffsetY)
-                                    if (newScale <= 1f) {
-                                        videoOffsetX = 0f
-                                        videoOffsetY = 0f
-                                    }
-                                    event.changes.forEach { it.consume() }
-                                }
-                            } else {
-                                val change = event.changes.first()
-                                if (!pastTouchSlop) {
-                                    val distance =
-                                        (change.position - firstDown.position).getDistance()
-                                    if (distance > viewConfiguration.touchSlop) {
-                                        pastTouchSlop = true
-                                        isTap = false
-                                    }
-                                }
-                                if (videoScale > 1f) {
-                                    val panChange = change.positionChange()
-                                    if (panChange != Offset.Zero) {
-                                        val maxOffsetX = (size.width * (videoScale - 1f)) / 2f
-                                        val maxOffsetY = (size.height * (videoScale - 1f)) / 2f
-                                        videoOffsetX =
-                                            (videoOffsetX + panChange.x).coerceIn(-maxOffsetX, maxOffsetX)
-                                        videoOffsetY =
-                                            (videoOffsetY + panChange.y).coerceIn(-maxOffsetY, maxOffsetY)
-                                        change.consume()
-                                    }
-                                }
-                            }
-                            if (event.changes.none { it.pressed }) {
-                                break
-                            }
-                        }
-
-                        // Tap gesture handling:
-                        // - Not zoomed: single tap toggles play/pause
-                        // - Zoomed: double-tap resets zoom to 1x
-                        if (isTap && !hasMultiTouch) {
-                            if (videoScale > 1f) {
-                                val now = System.currentTimeMillis()
-                                if (now - lastTapTimeMs < 300L) {
-                                    videoScale = 1f
-                                    videoOffsetX = 0f
-                                    videoOffsetY = 0f
-                                    lastTapTimeMs = 0L
-                                } else {
-                                    lastTapTimeMs = now
-                                }
-                            } else {
-                                tapFeedbackIsPlaying = !currentExoPlayer.isPlaying
-                                currentOnTogglePlayPause()
-                            }
-                        }
-                    }
-                }) {
+    Box(modifier = modifier) {
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
@@ -256,10 +122,10 @@ fun VideoSurface(
                 // This prevents expensive full recompositions of the VideoSurface during
                 // high-frequency gesture events like panning and zooming.
                 .graphicsLayer {
-                    scaleX = videoScale
-                    scaleY = videoScale
-                    translationX = videoOffsetX
-                    translationY = videoOffsetY
+                    scaleX = transform.scale
+                    scaleY = transform.scale
+                    translationX = transform.offsetX
+                    translationY = transform.offsetY
                 }
         )
 
@@ -268,10 +134,15 @@ fun VideoSurface(
         // real surface takes over once the drag settles and the exact seek has rendered.
         ScrubPreviewOverlay(
             preview = scrubPreview,
-            scale = { videoScale },
-            offsetX = { videoOffsetX },
-            offsetY = { videoOffsetY }
+            transform = transform
         )
+
+        // Keep AndroidView's consumed DOWN events out of the gesture chain while
+        // retaining the dial's child-first ownership of gestures inside its circle.
+        Box(Modifier.fillMaxSize().videoGestures(transform, !isExporting) {
+            tapFeedbackIsPlaying = !exoPlayer.isPlaying
+            onTogglePlayPause()
+        }) { overlay() }
 
         // Loading/exporting overlay
         if (isExporting) {
@@ -380,7 +251,7 @@ fun VideoSurface(
         }
 
         // Zoom level indicator + reset button (visible when zoomed in)
-        if (videoScale > 1.05f) {
+        if (transform.scale > 1.05f) {
             Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -393,7 +264,7 @@ fun VideoSurface(
                     color = inverseSurfaceColor70
                 ) {
                     Text(
-                        text = "\u00d7${"%.1f".format(videoScale)}",
+                        text = "\u00d7${"%.1f".format(transform.scale)}",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.inverseOnSurface,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
@@ -402,11 +273,7 @@ fun VideoSurface(
                 Surface(
                     shape = RoundedCornerShape(50),
                     color = inverseSurfaceColor70,
-                    onClick = {
-                        videoScale = 1f
-                        videoOffsetX = 0f
-                        videoOffsetY = 0f
-                    }
+                    onClick = transform::reset
                 ) {
                     Text(
                         text = stringResource(R.string.zoom_reset),
@@ -417,6 +284,5 @@ fun VideoSurface(
                 }
             }
         }
-        overlay()
     }
 }
