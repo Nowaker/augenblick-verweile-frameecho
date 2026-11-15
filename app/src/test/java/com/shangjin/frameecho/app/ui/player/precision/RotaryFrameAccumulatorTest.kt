@@ -116,4 +116,27 @@ class RotaryFrameAccumulatorTest {
         assertEquals(30, halfTurn)
         assertEquals(30, quarterTurn)
     }
+
+    @Test
+    fun `wobbling around a completed turn does not emit another revolution tick`() {
+        val dial = RotaryFrameAccumulator(framesPerTurn = 60, deadZoneRadius = 20f)
+        dial.beginAt(0.0)
+        val firstTurn = dial.turn(from = 0.0, stepDegrees = 10.0, count = 37)
+
+        val wobble = listOf(350.0, 370.0, 350.0, 370.0).map { dial.moveTo(degrees(it)) }
+
+        assertEquals(1, firstTurn.sumOf { it.revolutionsCompleted })
+        assertEquals(0, wobble.sumOf { it.revolutionsCompleted })
+    }
+
+    @Test
+    fun `a counterclockwise revolution ticks when the full turn is reached`() {
+        val dial = RotaryFrameAccumulator(framesPerTurn = 60, deadZoneRadius = 20f)
+        dial.begin(100f, 0f)
+
+        val steps = listOf(0f to -100f, -100f to 0f, 0f to 100f, 100f to 0f)
+            .map { (x, y) -> dial.move(x, y) }
+
+        assertEquals(listOf(0, 0, 0, 1), steps.map { it.revolutionsCompleted })
+    }
 }

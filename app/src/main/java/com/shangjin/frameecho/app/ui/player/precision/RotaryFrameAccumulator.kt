@@ -1,6 +1,7 @@
 package com.shangjin.frameecho.app.ui.player.precision
 
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.floor
 import kotlin.math.hypot
@@ -34,8 +35,8 @@ data class RotaryStep(
  * there swings wildly for a tiny finger movement; leaving the dead zone re-anchors at the
  * new angle instead of jumping to it.
  *
- * A haptic revolution is counted whenever the rotation since the grab reaches another
- * whole turn away from it (one turn, two turns, ...), clockwise or counterclockwise.
+ * A haptic revolution is one full turn in either direction since the last tick. Small
+ * reversals around a completed turn therefore cannot repeatedly trigger the same tick.
  */
 class RotaryFrameAccumulator(framesPerTurn: Int, private val deadZoneRadius: Float) {
 
@@ -49,6 +50,7 @@ class RotaryFrameAccumulator(framesPerTurn: Int, private val deadZoneRadius: Flo
     private var rebaseFrames = 0L
     private var rebaseRotation = 0.0
     private var emittedFrames = 0L
+    private var hapticRotation = 0.0
 
     /** Starts a gesture at [dx], [dy] from the centre. Emits nothing. */
     fun begin(dx: Float, dy: Float) {
@@ -56,6 +58,7 @@ class RotaryFrameAccumulator(framesPerTurn: Int, private val deadZoneRadius: Flo
         rebaseFrames = 0L
         rebaseRotation = 0.0
         emittedFrames = 0L
+        hapticRotation = 0.0
         lastAngle = angleOf(dx, dy)
     }
 
@@ -68,14 +71,15 @@ class RotaryFrameAccumulator(framesPerTurn: Int, private val deadZoneRadius: Flo
         var delta = angle - previous
         if (delta > PI) delta -= TWO_PI else if (delta < -PI) delta += TWO_PI
 
-        val turnsBefore = rotation / TWO_PI
         rotation += delta
-        val turnsAfter = rotation / TWO_PI
+        hapticRotation += delta
+        val revolutions = floor(abs(hapticRotation) / TWO_PI).toInt()
+        if (revolutions > 0) hapticRotation %= TWO_PI
 
         val target = rebaseFrames + floor((rotation - rebaseRotation) / TWO_PI * framesPerTurn + 0.5).toLong()
         val frames = (target - emittedFrames).toInt()
         emittedFrames = target
-        return RotaryStep(frames, wholeTurnsCrossed(turnsBefore, turnsAfter), delta)
+        return RotaryStep(frames, revolutions, delta)
     }
 
     /** Applies a new frames-per-turn from now on, without moving or restarting the gesture. */
@@ -92,12 +96,5 @@ class RotaryFrameAccumulator(framesPerTurn: Int, private val deadZoneRadius: Flo
     private companion object {
         const val TWO_PI = 2 * PI
 
-        /** Nonzero whole numbers between [from] and [to]: the grab point itself is no turn. */
-        fun wholeTurnsCrossed(from: Double, to: Double): Int {
-            val lo = minOf(from, to)
-            val hi = maxOf(from, to)
-            val crossed = (floor(hi) - floor(lo)).toInt()
-            return if (lo < 0.0 && hi >= 0.0) crossed - 1 else crossed
-        }
     }
 }
