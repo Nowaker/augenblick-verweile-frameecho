@@ -6,6 +6,8 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
 import io.mockk.every
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.mockkConstructor
 import io.mockk.mockkStatic
@@ -19,6 +21,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -26,6 +29,13 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class AdjacentFramePreviewTest {
+    @Before
+    fun setupAndroidLogging() {
+        mockkStatic(Log::class)
+        every { Log.w(any(), any<String>()) } returns 0
+        every { Log.w(any(), any(), any<Throwable>()) } returns 0
+    }
+
     @After
     fun tearDown() {
         unmockkAll()
@@ -36,16 +46,17 @@ class AdjacentFramePreviewTest {
         val context = mockk<Context>(relaxed = true)
         val uri = mockk<Uri>()
         mockkConstructor(MediaMetadataRetriever::class)
-        mockkStatic(Bitmap::class)
+        mockkConstructor(PreviewFrameReader::class)
         every { anyConstructed<MediaMetadataRetriever>().setDataSource(context, uri) } returns Unit
         every { anyConstructed<MediaMetadataRetriever>().extractMetadata(any()) } returns "100"
         every { anyConstructed<MediaMetadataRetriever>().release() } returns Unit
-        every { anyConstructed<MediaMetadataRetriever>().getFrameAtTime(any(), any()) } answers {
-            mockk<Bitmap>(relaxed = true).also { bitmap ->
+        coEvery { anyConstructed<PreviewFrameReader>().release() } returns Unit
+        coEvery { anyConstructed<PreviewFrameReader>().read(any()) } coAnswers {
+            val bitmap = mockk<Bitmap>(relaxed = true).also { bitmap ->
                 every { bitmap.allocationByteCount } returns 40_000
             }
+            DecodedFrame(bitmap, firstArg())
         }
-        every { Bitmap.createScaledBitmap(any(), any(), any(), any()) } answers { firstArg() }
         val preview = AdjacentFramePreview(context, uri, this)
         try {
             withTimeout(5_000L) {
@@ -58,35 +69,39 @@ class AdjacentFramePreviewTest {
             preview.release()
         }
 
-        verify(exactly = 1) {
-            anyConstructed<MediaMetadataRetriever>().getFrameAtTime(100_000L, MediaMetadataRetriever.OPTION_CLOSEST)
-        }
+        coVerify(exactly = 1) { anyConstructed<PreviewFrameReader>().read(100_000L) }
+        coVerify(exactly = 1) { anyConstructed<PreviewFrameReader>().release() }
         verify(exactly = 1) { anyConstructed<MediaMetadataRetriever>().setDataSource(context, uri) }
         verify(exactly = 1) { anyConstructed<MediaMetadataRetriever>().release() }
         assertEquals(null, preview.preview.value)
     }
 
     @Test
-    fun `requests arriving during decoding publish only the newest target`() = runBlocking {
+    fun `completed frames remain visible while a newer target is waiting`() = runBlocking {
         val context = mockk<Context>(relaxed = true)
         val uri = mockk<Uri>()
         val decoding = CompletableDeferred<Unit>()
         val allowDecode = CountDownLatch(1)
+        val allowNewestDecode = CountDownLatch(1)
         mockkConstructor(MediaMetadataRetriever::class)
-        mockkStatic(Bitmap::class)
+        mockkConstructor(PreviewFrameReader::class)
         every { anyConstructed<MediaMetadataRetriever>().setDataSource(context, uri) } returns Unit
         every { anyConstructed<MediaMetadataRetriever>().extractMetadata(any()) } returns "100"
         every { anyConstructed<MediaMetadataRetriever>().release() } returns Unit
-        every { anyConstructed<MediaMetadataRetriever>().getFrameAtTime(any(), any()) } answers {
+        coEvery { anyConstructed<PreviewFrameReader>().release() } returns Unit
+        coEvery { anyConstructed<PreviewFrameReader>().read(any()) } coAnswers {
             if (firstArg<Long>() == 100_000L) {
                 decoding.complete(Unit)
                 check(allowDecode.await(5L, TimeUnit.SECONDS)) { "Test never released the native decoder" }
             }
-            mockk<Bitmap>(relaxed = true).also { bitmap ->
+            if (firstArg<Long>() == 300_000L) {
+                check(allowNewestDecode.await(5L, TimeUnit.SECONDS)) { "Test never released the newest decode" }
+            }
+            val bitmap = mockk<Bitmap>(relaxed = true).also { bitmap ->
                 every { bitmap.allocationByteCount } returns 40_000
             }
+            DecodedFrame(bitmap, firstArg())
         }
-        every { Bitmap.createScaledBitmap(any(), any(), any(), any()) } answers { firstArg() }
         val preview = AdjacentFramePreview(context, uri, this)
         val firstPublished = async(start = CoroutineStart.UNDISPATCHED) {
             preview.preview.filterNotNull().first()
@@ -98,16 +113,17 @@ class AdjacentFramePreviewTest {
                 preview.request(200L, 0f, 1_000L)
                 preview.request(300L, 0f, 1_000L)
                 allowDecode.countDown()
-                assertEquals(300L, firstPublished.await().positionMs)
+                assertEquals(100L, firstPublished.await().positionMs)
+                allowNewestDecode.countDown()
+                preview.preview.first { it?.positionMs == 300L }
             }
         } finally {
             allowDecode.countDown()
+            allowNewestDecode.countDown()
             firstPublished.cancel()
             preview.release()
         }
-        verify(exactly = 0) {
-            anyConstructed<MediaMetadataRetriever>().getFrameAtTime(200_000L, any())
-        }
+        coVerify(exactly = 0) { anyConstructed<PreviewFrameReader>().read(200_000L) }
     }
 
     @Test
@@ -115,20 +131,17 @@ class AdjacentFramePreviewTest {
         val context = mockk<Context>(relaxed = true)
         val uri = mockk<Uri>()
         mockkConstructor(MediaMetadataRetriever::class)
-        mockkStatic(Bitmap::class)
-        mockkStatic(Log::class)
-        every { Log.w(any(), any<String>()) } returns 0
-        every { Log.w(any(), any(), any<Throwable>()) } returns 0
+        mockkConstructor(PreviewFrameReader::class)
         every { anyConstructed<MediaMetadataRetriever>().setDataSource(context, uri) } returns Unit
         every { anyConstructed<MediaMetadataRetriever>().extractMetadata(any()) } returns "100"
         every { anyConstructed<MediaMetadataRetriever>().release() } returns Unit
-        every { anyConstructed<MediaMetadataRetriever>().getFrameAtTime(100_000L, any()) } returns
-            mockk<Bitmap>(relaxed = true).also { bitmap ->
+        coEvery { anyConstructed<PreviewFrameReader>().release() } returns Unit
+        val bitmap = mockk<Bitmap>(relaxed = true).also { bitmap ->
                 every { bitmap.allocationByteCount } returns 40_000
             }
-        every { anyConstructed<MediaMetadataRetriever>().getFrameAtTime(200_000L, any()) } throws
+        coEvery { anyConstructed<PreviewFrameReader>().read(100_000L) } returns DecodedFrame(bitmap, 100_000L)
+        coEvery { anyConstructed<PreviewFrameReader>().read(200_000L) } throws
             IllegalStateException("Decoder stopped")
-        every { Bitmap.createScaledBitmap(any(), any(), any(), any()) } answers { firstArg() }
         val preview = AdjacentFramePreview(context, uri, this)
         try {
             withTimeout(5_000L) {
