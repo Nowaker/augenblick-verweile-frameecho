@@ -10,11 +10,16 @@ import android.provider.MediaStore
 import android.system.Os
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.shangjin.frameecho.app.recents.RecentAccess
+import com.shangjin.frameecho.app.ui.export.forFileNamePreview
+import com.shangjin.frameecho.app.ui.player.PlayerUiState
+import com.shangjin.frameecho.app.ui.player.source.LoadedSource
 import com.shangjin.frameecho.core.media.export.FrameExporter
 import com.shangjin.frameecho.core.media.export.HeicSupport
 import com.shangjin.frameecho.core.media.extraction.FrameExtractor
 import com.shangjin.frameecho.core.media.source.MediaSourceResolver
 import com.shangjin.frameecho.core.model.ExportConfig
+import com.shangjin.frameecho.core.model.ExportFileName
 import com.shangjin.frameecho.core.model.ExportFormat
 import com.shangjin.frameecho.core.model.ExportResult
 import kotlinx.coroutines.runBlocking
@@ -116,15 +121,33 @@ class MediaWorkflowDeviceTest {
                 extractor.releaseBitmap(reopened.first)
                 val imageLength = requireNotNull(resolved.originalImageLength)
                 val coverUs = requireNotNull(resolved.presentationTimestampUs)
-                val still = frame.copy(
-                    timestampUs = coverUs,
-                    metadata = requireNotNull(resolved.sourceMetadata).copy(dateTimePositionUs = coverUs)
+                val loaded = LoadedSource(
+                    motionUri, resolved.sourceFileName, "image/jpeg", RecentAccess.MEDIA_STORE,
+                    resolved.sourceMetadata, coverUs, imageLength, resolved.originalImageMimeType
                 )
+                val selected = frame.copy(timestampUs = coverUs + 33L, metadata = loaded.metadataFor(frame.metadata))
+                val selection = PlayerUiState(
+                    source = loaded, displayedFrameUs = selected.timestampUs, videoFrameRate = selected.metadata.frameRate,
+                    frameMetadata = selected.metadata, fileNameTimestampMs = 123L,
+                    exportConfig = ExportConfig(originalImage = true, format = ExportFormat.HEIC,
+                        customFileName = "{filename}_{timestamp}_{position}")
+                )
+                assertTrue(selection.originalStillAvailable)
+                val previewName = ExportFileName.generate(
+                    requireNotNull(selection.previewFrame), selection.effectiveExportConfig.forFileNamePreview("image/jpeg"), 999L
+                )
+                val still = requireNotNull(loaded.originalStillFrame(selected))
                 val copy = save(FrameExporter(context).exportOriginalImage(
                     motionUri, imageLength, requireNotNull(resolved.originalImageMimeType),
-                    still, ExportConfig(originalImage = true)
+                    still, selection.effectiveExportConfig
                 ))
 
+                context.contentResolver.query(
+                    Uri.parse(copy.outputPath), arrayOf(MediaStore.Images.Media.DISPLAY_NAME), null, null, null
+                )!!.use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(previewName, cursor.getString(0))
+                }
                 val sourceBytes = context.contentResolver.openInputStream(motionUri)!!.use { it.readBytes() }
                 val copiedBytes = context.contentResolver.openInputStream(Uri.parse(copy.outputPath))!!.use { it.readBytes() }
                 assertArrayEquals(sourceBytes.copyOfRange(0, imageLength.toInt()), copiedBytes)

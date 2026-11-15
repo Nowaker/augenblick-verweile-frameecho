@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import com.shangjin.frameecho.app.recents.RecentAccess
 import com.shangjin.frameecho.app.recents.RecentMediaRecorder
+import com.shangjin.frameecho.app.ui.export.forFileNamePreview
 import com.shangjin.frameecho.core.media.export.FrameExporter
 import com.shangjin.frameecho.core.media.extraction.FrameExtractor
 import com.shangjin.frameecho.core.media.source.MediaSourceException
@@ -29,6 +30,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.IOException
@@ -166,6 +168,42 @@ class PlayerSourceWiringTest {
 
         vm.onDisplayedFrame(300_000L)
         assertEquals(300_000L, vm.uiState.value.displayedFrameUs)
+    }
+
+    @Test
+    fun `original still preview and save name the cover rather than the nearby decoded sample`() {
+        useResolver { resolved("motion.jpg") }
+        vm.openMedia(uri("content://media/motion.jpg"), RecentAccess.PERSISTED_GRANT)
+        vm.updateDuration(3_000L)
+        vm.updateVideoFrameRate(30f)
+        vm.updateExportConfig(ExportConfig(
+            originalImage = true, format = ExportFormat.HEIC,
+            customFileName = "{filename}_{timestamp}_{position}"
+        ))
+        now = 123L
+        vm.onPausedAtFrame(1_000_033L)
+        val selection = vm.uiState.value
+        val previewFrame = requireNotNull(selection.previewFrame)
+        val previewConfig = selection.effectiveExportConfig.forFileNamePreview(selection.source?.originalImageMimeType)
+        val previewName = ExportFileName.generate(previewFrame, previewConfig, exportTimestampMs = 999L)
+        val savedFrame = slot<CapturedFrame>()
+        val savedConfig = slot<ExportConfig>()
+        coEvery { extractor.extractFrameWithInfo(any(), 1_000_033L) } returns
+            (mockk<Bitmap>(relaxed = true) to CapturedFrame(1_000_033L, 1920, 1080, ColorSpaceInfo(), decoded))
+        coEvery { exporter.exportOriginalImage(any(), any(), any(), capture(savedFrame), capture(savedConfig), any()) } returns
+            ExportResult.Success("content://out/original", 1920, 1080, 4_000, ExportFormat.JPEG)
+
+        vm.captureAndSave(motionPhoto = false)
+
+        assertTrue(selection.originalStillAvailable)
+        assertEquals("motion_123_000001000000.jpg", previewName)
+        assertEquals(previewName, ExportFileName.generate(
+            savedFrame.captured, savedConfig.captured.forFileNamePreview("image/jpeg"), exportTimestampMs = 999L
+        ))
+        assertEquals(123L, savedConfig.captured.fileNameTimestampMs)
+        assertEquals(savedFrame.captured.metadata, previewFrame.metadata)
+        assertEquals(1_000_000L, previewFrame.metadata.dateTimePositionUs)
+        assertEquals(still.dateTime, previewFrame.metadata.dateTime)
     }
 
     @Test
