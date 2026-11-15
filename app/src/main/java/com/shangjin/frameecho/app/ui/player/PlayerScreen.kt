@@ -611,7 +611,7 @@ fun PlayerScreen(
                                 .background(MaterialTheme.colorScheme.surfaceContainerLow)
                         )
                     },
-                    controls = {
+                    controls = { onSeekGestureActive ->
                         // In landscape the bars scroll with the controls, leaving the video
                         // the full inset-safe height, including room for the precision dial.
                         if (sideBySide) playerTopBar()
@@ -652,6 +652,7 @@ fun PlayerScreen(
                             holdToRepeat = appSettings.holdToRepeatEnabled,
                             repeatSchedule = appSettings.repeatSchedule,
                             frameSteps = frameSteps,
+                            onSeekGestureActive = onSeekGestureActive,
                             precisionMode = precisionMode,
                             onPrecisionModeChange = { checked ->
                                 if (!checked) frameSteps.finish()

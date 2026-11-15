@@ -5,6 +5,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.Layout
@@ -15,17 +19,20 @@ import androidx.compose.ui.unit.Constraints
 internal fun PlayerContentLayout(
     sideBySide: Boolean,
     video: @Composable () -> Unit,
-    controls: @Composable () -> Unit,
+    controls: @Composable (onSeekGestureActive: (Boolean) -> Unit) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val controlsScrollState = rememberScrollState()
+    var seekGestureActive by remember { mutableStateOf(false) }
     Layout(
         modifier = modifier,
         content = {
             Box(modifier = if (sideBySide) Modifier.clipToBounds() else Modifier) { video() }
             Column(
-                modifier = if (sideBySide) Modifier.verticalScroll(controlsScrollState) else Modifier
-            ) { controls() }
+                modifier = if (sideBySide) {
+                    Modifier.verticalScroll(controlsScrollState, enabled = !seekGestureActive)
+                } else Modifier
+            ) { controls { seekGestureActive = it } }
         }
     ) { measurables, constraints ->
         val width = constraints.maxWidth

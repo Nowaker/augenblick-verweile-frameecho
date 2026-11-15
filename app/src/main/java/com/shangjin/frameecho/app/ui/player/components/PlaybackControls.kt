@@ -125,6 +125,7 @@ fun PlaybackControls(
     frameSteps: FrameStepState,
     precisionMode: Boolean,
     onPrecisionModeChange: (Boolean) -> Unit,
+    onSeekGestureActive: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val hapticFeedback = LocalHapticFeedback.current
@@ -245,6 +246,7 @@ fun PlaybackControls(
             Box(
                 modifier = Modifier
                     .weight(1f)
+                    .reserveSliderGesture(onSeekGestureActive)
                     .pointerInput(frameSteps) {
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
