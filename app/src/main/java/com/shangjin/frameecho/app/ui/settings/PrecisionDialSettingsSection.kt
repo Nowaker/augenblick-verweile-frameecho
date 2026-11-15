@@ -7,16 +7,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.listSaver
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -30,39 +26,27 @@ import com.shangjin.frameecho.app.ui.settings.PrecisionDialSettingsDraft.Result
  * Settings for the rotary precision dial: frames per turn, the guide's three opacities,
  * how long it stays hidden after a turn, and its colour.
  *
- * Each edit is saved through [onSettingsChange] as soon as every field holds a valid
- * value; until then the invalid fields are marked and nothing is stored, so the dial
- * never runs on half-typed numbers. Saved values replace the fields only when there is
- * no newer edit, so delayed persistence never overwrites text still being typed.
+ * Fields remain drafts until the user saves a valid configuration. The caller owns
+ * those drafts so leaving the Settings screen can protect unsaved edits.
  */
 @Composable
 fun PrecisionDialSettingsSection(
     settings: PrecisionDialSettings,
+    draft: PrecisionDialSettingsDraft,
+    onDraftChange: (PrecisionDialSettingsDraft) -> Unit,
     onSettingsChange: (PrecisionDialSettings) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var draft by rememberSaveable(stateSaver = DraftSaver) { mutableStateOf(PrecisionDialSettingsDraft.from(settings)) }
-    var observedDraft by rememberSaveable(stateSaver = DraftSaver) { mutableStateOf(PrecisionDialSettingsDraft.from(settings)) }
-    LaunchedEffect(settings) {
-        val current = PrecisionDialSettingsDraft.from(settings)
-        draft = draft.reconcileSavedDraft(observedDraft, current)
-        observedDraft = current
-    }
     val result = draft.toSettings()
     val invalid = (result as? Result.Invalid)?.fields.orEmpty()
-
-    fun edit(next: PrecisionDialSettingsDraft) {
-        draft = next
-        val parsed = (next.toSettings() as? Result.Valid)?.settings
-        if (parsed != null && parsed != settings) onSettingsChange(parsed)
-    }
+    val isSaved = draft == PrecisionDialSettingsDraft.from(settings)
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingsSectionTitle(stringResource(R.string.precision_dial_settings_title))
         SettingsHint(stringResource(R.string.precision_dial_settings_hint))
         DialNumberField(
             value = draft.framesPerTurn,
-            onValueChange = { edit(draft.copy(framesPerTurn = it)) },
+            onValueChange = { onDraftChange(draft.copy(framesPerTurn = it)) },
             label = R.string.precision_dial_frames_per_turn,
             unit = R.string.precision_dial_unit_frames,
             supporting = stringResource(
@@ -74,7 +58,7 @@ fun PrecisionDialSettingsSection(
         )
         DialNumberField(
             value = draft.initialOpacityPercent,
-            onValueChange = { edit(draft.copy(initialOpacityPercent = it)) },
+            onValueChange = { onDraftChange(draft.copy(initialOpacityPercent = it)) },
             label = R.string.precision_dial_initial_opacity,
             unit = R.string.precision_dial_unit_percent,
             supporting = percentRange(PrecisionDialSettings.MIN_INITIAL_OPACITY),
@@ -83,7 +67,7 @@ fun PrecisionDialSettingsSection(
         )
         DialNumberField(
             value = draft.restingOpacityPercent,
-            onValueChange = { edit(draft.copy(restingOpacityPercent = it)) },
+            onValueChange = { onDraftChange(draft.copy(restingOpacityPercent = it)) },
             label = R.string.precision_dial_resting_opacity,
             unit = R.string.precision_dial_unit_percent,
             supporting = percentRange(PrecisionDialSettings.MIN_RESTING_OPACITY) + " " +
@@ -93,7 +77,7 @@ fun PrecisionDialSettingsSection(
         )
         DialNumberField(
             value = draft.draggingOpacityPercent,
-            onValueChange = { edit(draft.copy(draggingOpacityPercent = it)) },
+            onValueChange = { onDraftChange(draft.copy(draggingOpacityPercent = it)) },
             label = R.string.precision_dial_dragging_opacity,
             unit = R.string.precision_dial_unit_percent,
             supporting = percentRange(0f),
@@ -102,7 +86,7 @@ fun PrecisionDialSettingsSection(
         )
         DialNumberField(
             value = draft.returnDelayMs,
-            onValueChange = { edit(draft.copy(returnDelayMs = it)) },
+            onValueChange = { onDraftChange(draft.copy(returnDelayMs = it)) },
             label = R.string.precision_dial_return_delay,
             unit = R.string.precision_dial_unit_ms,
             supporting = stringResource(R.string.precision_dial_range_whole, 0, PrecisionDialSettings.MAX_RETURN_DELAY_MS.toInt()),
@@ -110,7 +94,7 @@ fun PrecisionDialSettingsSection(
         )
         PrecisionGuideColorPicker(
             colorHex = draft.guideColorHex,
-            onColorHexChange = { edit(draft.copy(guideColorHex = it)) },
+            onColorHexChange = { onDraftChange(draft.copy(guideColorHex = it)) },
             isError = PrecisionDialField.GUIDE_COLOR in invalid
         )
         if (invalid.isNotEmpty()) {
@@ -122,13 +106,27 @@ fun PrecisionDialSettingsSection(
         }
         TextButton(
             onClick = {
-                draft = PrecisionDialSettingsDraft.from(PrecisionDialSettings.DEFAULT)
-                if (settings != PrecisionDialSettings.DEFAULT) onSettingsChange(PrecisionDialSettings.DEFAULT)
+                onDraftChange(PrecisionDialSettingsDraft.from(PrecisionDialSettings.DEFAULT))
             },
             modifier = Modifier.heightIn(min = 48.dp)
         ) {
             Text(stringResource(R.string.precision_dial_reset))
         }
+        Text(
+            text = stringResource(if (isSaved) R.string.precision_dial_saved else R.string.precision_dial_changes_unsaved),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Button(
+            onClick = {
+                when (val current = draft.toSettings()) {
+                    is Result.Valid -> onSettingsChange(current.settings)
+                    is Result.Invalid -> Unit
+                }
+            },
+            enabled = result is Result.Valid && !isSaved,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+        ) { Text(stringResource(R.string.precision_dial_save)) }
     }
 }
 
@@ -162,7 +160,7 @@ private fun DialNumberField(
     )
 }
 
-private val DraftSaver = listSaver<PrecisionDialSettingsDraft, String>(
+internal val PrecisionDialDraftSaver = listSaver<PrecisionDialSettingsDraft, String>(
     save = {
         listOf(it.framesPerTurn, it.initialOpacityPercent, it.restingOpacityPercent, it.draggingOpacityPercent, it.returnDelayMs, it.guideColorHex)
     },

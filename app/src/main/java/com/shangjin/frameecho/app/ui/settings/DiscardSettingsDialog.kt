@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.dp
 import com.shangjin.frameecho.R
 
 @Composable
-internal fun DiscardScheduleDialog(onKeepEditing: () -> Unit, onDiscard: () -> Unit) {
+internal fun DiscardSettingsDialog(onKeepEditing: () -> Unit, onDiscard: () -> Unit) {
     AlertDialog(
         onDismissRequest = onKeepEditing,
         title = { Text(stringResource(R.string.app_settings_discard_title)) },

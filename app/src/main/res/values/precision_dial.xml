@@ -4,7 +4,7 @@
     <string name="precision_dial_toggle">Precision dial</string>
     <string name="precision_dial_exit_hint">Turn off Precision dial to leave fine mode</string>
     <string name="precision_dial_settings_title">Precision dial</string>
-    <string name="precision_dial_settings_hint">Turn the dial clockwise to step forward and counterclockwise to step back, as many turns as you like. Changes are saved once every field is valid.</string>
+    <string name="precision_dial_settings_hint">Turn the dial clockwise to step forward and counterclockwise to step back, as many turns as you like. Use Save dial settings to apply valid edits.</string>
     <string name="precision_dial_frames_per_turn">Frames per full turn</string>
     <string name="precision_dial_initial_opacity">Guide opacity at first</string>
     <string name="precision_dial_resting_opacity">Guide opacity after turning</string>
@@ -27,4 +27,7 @@
     <string name="precision_dial_color_pink">Pink</string>
     <string name="precision_dial_unsaved">Not saved: correct the highlighted fields.</string>
     <string name="precision_dial_reset">Reset to defaults</string>
+    <string name="precision_dial_save">Save dial settings</string>
+    <string name="precision_dial_saved">Dial settings saved</string>
+    <string name="precision_dial_changes_unsaved">Unsaved dial settings</string>
 </resources>

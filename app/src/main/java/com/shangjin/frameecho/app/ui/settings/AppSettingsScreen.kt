@@ -57,12 +57,24 @@ fun AppSettingsScreen(
     var observedDraft by rememberSaveable(stateSaver = ScheduleDraftSaver) {
         mutableStateOf(ScheduleDraft.from(settings.repeatSchedule))
     }
+    var precisionDraft by rememberSaveable(stateSaver = PrecisionDialDraftSaver) {
+        mutableStateOf(PrecisionDialSettingsDraft.from(settings.precisionDial))
+    }
+    var observedPrecisionDraft by rememberSaveable(stateSaver = PrecisionDialDraftSaver) {
+        mutableStateOf(PrecisionDialSettingsDraft.from(settings.precisionDial))
+    }
     var pendingDestination by rememberSaveable { mutableStateOf<SettingsDestination?>(null) }
-    val hasUnsavedChanges = draft != ScheduleDraft.from(settings.repeatSchedule)
+    val hasUnsavedChanges = draft != ScheduleDraft.from(settings.repeatSchedule) ||
+        precisionDraft != PrecisionDialSettingsDraft.from(settings.precisionDial)
     LaunchedEffect(settings.repeatSchedule) {
         val current = ScheduleDraft.from(settings.repeatSchedule)
         draft = draft.reconcileSavedDraft(observedDraft, current)
         observedDraft = current
+    }
+    LaunchedEffect(settings.precisionDial) {
+        val current = PrecisionDialSettingsDraft.from(settings.precisionDial)
+        precisionDraft = precisionDraft.reconcileSavedDraft(observedPrecisionDraft, current)
+        observedPrecisionDraft = current
     }
 
     fun navigate(destination: SettingsDestination) {
@@ -106,16 +118,25 @@ fun AppSettingsScreen(
                 draft = ScheduleDraft.from(schedule)
             }
             HorizontalDivider()
-            PrecisionDialSettingsSection(settings.precisionDial, onPrecisionDialChange)
+            PrecisionDialSettingsSection(
+                settings = settings.precisionDial,
+                draft = precisionDraft,
+                onDraftChange = { precisionDraft = it },
+                onSettingsChange = {
+                    onPrecisionDialChange(it)
+                    precisionDraft = PrecisionDialSettingsDraft.from(it)
+                }
+            )
             HorizontalDivider()
             SettingsAboutRow { requestNavigation(SettingsDestination.ABOUT) }
         }
     }
     pendingDestination?.let { destination ->
-        DiscardScheduleDialog(
+        DiscardSettingsDialog(
             onKeepEditing = { pendingDestination = null },
             onDiscard = {
                 draft = ScheduleDraft.from(settings.repeatSchedule)
+                precisionDraft = PrecisionDialSettingsDraft.from(settings.precisionDial)
                 pendingDestination = null
                 navigate(destination)
             }

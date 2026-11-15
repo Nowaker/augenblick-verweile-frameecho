@@ -30,8 +30,8 @@
     <string name="app_settings_error_fps_range">Use a speed from %1$s to %2$s frames/sec.</string>
     <string name="app_settings_error_delay_number">Enter a finite number of seconds for the hold delay.</string>
     <string name="app_settings_error_stage_numbers">Enter numeric seconds and frames/sec in both stage fields.</string>
-    <string name="app_settings_discard_title">Discard schedule changes?</string>
-    <string name="app_settings_discard_message">The acceleration schedule has unsaved edits. Discard them and leave this screen?</string>
+    <string name="app_settings_discard_title">Discard settings changes?</string>
+    <string name="app_settings_discard_message">Settings have unsaved edits. Discard them and leave this screen?</string>
     <string name="app_settings_discard_changes">Discard changes</string>
     <string name="app_settings_keep_editing">Keep editing</string>
 </resources>
