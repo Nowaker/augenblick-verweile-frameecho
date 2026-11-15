@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="precision_dial_label">Precision frame dial. Turn clockwise for next frames, counterclockwise for previous frames.</string>
+    <string name="precision_dial_toggle">Precision dial</string>
+    <string name="precision_dial_settings_title">Precision dial</string>
+    <string name="precision_dial_settings_hint">Turn the dial clockwise to step forward and counterclockwise to step back, as many turns as you like. Changes are saved once every field is valid.</string>
+    <string name="precision_dial_frames_per_turn">Frames per full turn</string>
+    <string name="precision_dial_initial_opacity">Guide opacity at first</string>
+    <string name="precision_dial_resting_opacity">Guide opacity after turning</string>
+    <string name="precision_dial_dragging_opacity">Guide opacity while turning</string>
+    <string name="precision_dial_return_delay">Guide return delay after release</string>
+    <string name="precision_dial_unit_frames">frames</string>
+    <string name="precision_dial_unit_percent">%</string>
+    <string name="precision_dial_unit_ms">ms</string>
+    <string name="precision_dial_range_whole">Whole number from %1$d to %2$d.</string>
+    <string name="precision_dial_range_percent">From %1$d%% to %2$d%%.</string>
+    <string name="precision_dial_resting_dimmer">Lower than the first opacity, so the returning guide stays out of the way.</string>
+    <string name="precision_dial_guide_color">Guide color</string>
+    <string name="precision_dial_color_hex">Custom color (#RRGGBB)</string>
+    <string name="precision_dial_color_hex_hint">Six hex digits, like #FFC107. Leave empty to follow the theme.</string>
+    <string name="precision_dial_color_theme">Theme color</string>
+    <string name="precision_dial_color_white">White</string>
+    <string name="precision_dial_color_amber">Amber</string>
+    <string name="precision_dial_color_cyan">Cyan</string>
+    <string name="precision_dial_color_lime">Lime</string>
+    <string name="precision_dial_color_pink">Pink</string>
+    <string name="precision_dial_unsaved">Not saved: correct the highlighted fields.</string>
+    <string name="precision_dial_reset">Reset to defaults</string>
+</resources>

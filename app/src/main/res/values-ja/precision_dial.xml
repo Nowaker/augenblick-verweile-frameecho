@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="precision_dial_label">精密コマ送りダイヤル。時計回りで次のフレーム、反時計回りで前のフレームへ移動します。</string>
+    <string name="precision_dial_toggle">精密ダイヤル</string>
+    <string name="precision_dial_settings_title">精密ダイヤル</string>
+    <string name="precision_dial_settings_hint">ダイヤルを時計回りに回すとコマ送り、反時計回りに回すとコマ戻しになります。回転数に制限はありません。すべての項目が有効になると自動で保存されます。</string>
+    <string name="precision_dial_frames_per_turn">1 回転あたりのフレーム数</string>
+    <string name="precision_dial_initial_opacity">最初のガイドの不透明度</string>
+    <string name="precision_dial_resting_opacity">回転後のガイドの不透明度</string>
+    <string name="precision_dial_dragging_opacity">回転中のガイドの不透明度</string>
+    <string name="precision_dial_return_delay">指を離してからガイドが戻るまでの時間</string>
+    <string name="precision_dial_unit_frames">フレーム</string>
+    <string name="precision_dial_unit_percent">%</string>
+    <string name="precision_dial_unit_ms">ミリ秒</string>
+    <string name="precision_dial_range_whole">%1$d～%2$d の整数を入力してください。</string>
+    <string name="precision_dial_range_percent">%1$d%%～%2$d%% の範囲です。</string>
+    <string name="precision_dial_resting_dimmer">戻ったガイドが邪魔にならないよう、最初の不透明度より低くしてください。</string>
+    <string name="precision_dial_guide_color">ガイドの色</string>
+    <string name="precision_dial_color_hex">カスタムカラー（#RRGGBB）</string>
+    <string name="precision_dial_color_hex_hint">#FFC107 のような 16 進数 6 桁。空欄にするとテーマに合わせます。</string>
+    <string name="precision_dial_color_theme">テーマの色</string>
+    <string name="precision_dial_color_white">白</string>
+    <string name="precision_dial_color_amber">琥珀色</string>
+    <string name="precision_dial_color_cyan">シアン</string>
+    <string name="precision_dial_color_lime">ライム</string>
+    <string name="precision_dial_color_pink">ピンク</string>
+    <string name="precision_dial_unsaved">未保存：強調表示された項目を修正してください。</string>
+    <string name="precision_dial_reset">既定値に戻す</string>
+</resources>

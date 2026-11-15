@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="precision_dial_label">精确逐帧转盘。顺时针转动前进，逆时针转动后退。</string>
+    <string name="precision_dial_toggle">精确转盘</string>
+    <string name="precision_dial_settings_title">精确转盘</string>
+    <string name="precision_dial_settings_hint">顺时针转动转盘逐帧前进，逆时针转动逐帧后退，圈数不限。所有字段有效后会自动保存。</string>
+    <string name="precision_dial_frames_per_turn">每转一圈的帧数</string>
+    <string name="precision_dial_initial_opacity">初始引导圈不透明度</string>
+    <string name="precision_dial_resting_opacity">转动后引导圈不透明度</string>
+    <string name="precision_dial_dragging_opacity">转动时引导圈不透明度</string>
+    <string name="precision_dial_return_delay">松开后引导圈恢复延迟</string>
+    <string name="precision_dial_unit_frames">帧</string>
+    <string name="precision_dial_unit_percent">%</string>
+    <string name="precision_dial_unit_ms">毫秒</string>
+    <string name="precision_dial_range_whole">请输入 %1$d 到 %2$d 之间的整数。</string>
+    <string name="precision_dial_range_percent">范围为 %1$d%% 到 %2$d%%。</string>
+    <string name="precision_dial_resting_dimmer">须低于初始不透明度，使恢复后的引导圈不干扰画面。</string>
+    <string name="precision_dial_guide_color">引导圈颜色</string>
+    <string name="precision_dial_color_hex">自定义颜色（#RRGGBB）</string>
+    <string name="precision_dial_color_hex_hint">六位十六进制数字，例如 #FFC107。留空则跟随主题。</string>
+    <string name="precision_dial_color_theme">主题颜色</string>
+    <string name="precision_dial_color_white">白色</string>
+    <string name="precision_dial_color_amber">琥珀色</string>
+    <string name="precision_dial_color_cyan">青色</string>
+    <string name="precision_dial_color_lime">青柠色</string>
+    <string name="precision_dial_color_pink">粉色</string>
+    <string name="precision_dial_unsaved">未保存：请修正标出的字段。</string>
+    <string name="precision_dial_reset">恢复默认值</string>
+</resources>
