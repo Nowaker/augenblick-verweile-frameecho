@@ -13,8 +13,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -76,6 +76,7 @@ import com.shangjin.frameecho.app.ui.player.components.EmptyState
 import com.shangjin.frameecho.app.ui.player.components.FrameInfoCard
 import com.shangjin.frameecho.app.ui.player.components.PlaybackControls
 import com.shangjin.frameecho.app.ui.player.components.PlayerBottomBar
+import com.shangjin.frameecho.app.ui.player.components.PlayerContentLayout
 import com.shangjin.frameecho.app.ui.player.components.PlayerTopBar
 import com.shangjin.frameecho.app.ui.player.components.VideoSurface
 import com.shangjin.frameecho.app.ui.player.framestep.rememberFrameStepPresentation
@@ -505,201 +506,212 @@ fun PlayerScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val sideBySide = uiState.videoUri != null && maxWidth > maxHeight
+        val playerTopBar: @Composable () -> Unit = {
+            PlayerTopBar(
+                scrollBehavior = scrollBehavior,
+                onOpenSystemPicker = onOpenSystemPicker,
+                onOpenRecents = onOpenRecents,
+                onOpenAppSettings = onOpenAppSettings,
+                onNavigateToAbout = onNavigateToAbout,
+                onOpenExportSettings = if (uiState.videoUri != null) {
+                    { viewModel.toggleExportSettings() }
+                } else null
+            )
+        }
+        val playerBottomBar: @Composable () -> Unit = {
+            if (uiState.videoUri != null) {
+                PlayerBottomBar(
+                    isMuted = uiState.isMuted,
+                    motionPhotoEnabled = uiState.exportConfig.motionPhoto,
+                    preserveMetadata = uiState.exportConfig.preserveMetadata,
+                    isCapturing = uiState.isCapturing,
+                    isExporting = uiState.isExporting,
+                    onToggleMute = { viewModel.setMuted(!uiState.isMuted) },
+                    onToggleMotionPhoto = {
+                        viewModel.updateExportConfig(
+                            uiState.exportConfig.copy(
+                                motionPhoto = !uiState.exportConfig.motionPhoto,
+                                // Copying the original still and a Motion Photo are exclusive.
+                                originalImage = uiState.exportConfig.originalImage &&
+                                    uiState.exportConfig.motionPhoto
+                            )
+                        )
+                    },
+                    onToggleMetadata = {
+                        viewModel.updateExportConfig(
+                            uiState.exportConfig.copy(
+                                preserveMetadata = !uiState.exportConfig.preserveMetadata
+                            )
+                        )
+                    },
+                    onCapture = {
+                        if (uiState.isCapturing || uiState.isExporting) return@PlayerBottomBar
+                        val requiresLegacyWritePermission =
+                            Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+                                uiState.customExportTreeUri == null &&
+                                ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.WRITE_EXTERNAL_STORAGE
+                                ) != PackageManager.PERMISSION_GRANTED
+                        if (requiresLegacyWritePermission) {
+                            pendingCaptureAfterPermission = true
+                            writePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                            return@PlayerBottomBar
+                        }
+                        runCaptureAndSave()
+                    }
+                )
+            }
+        }
         Scaffold(
             modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-            topBar = {
-                PlayerTopBar(
-                    scrollBehavior = scrollBehavior,
-                    onOpenSystemPicker = onOpenSystemPicker,
-                    onOpenRecents = onOpenRecents,
-                    onOpenAppSettings = onOpenAppSettings,
-                    onNavigateToAbout = onNavigateToAbout,
-                    onOpenExportSettings = if (uiState.videoUri != null) {
-                        { viewModel.toggleExportSettings() }
-                    } else null
-                )
-            },
-            bottomBar = {
-                if (uiState.videoUri != null) {
-                    PlayerBottomBar(
-                        isMuted = uiState.isMuted,
-                        motionPhotoEnabled = uiState.exportConfig.motionPhoto,
-                        preserveMetadata = uiState.exportConfig.preserveMetadata,
-                        isCapturing = uiState.isCapturing,
-                        isExporting = uiState.isExporting,
-                        onToggleMute = { viewModel.setMuted(!uiState.isMuted) },
-                        onToggleMotionPhoto = {
-                            viewModel.updateExportConfig(
-                                uiState.exportConfig.copy(
-                                    motionPhoto = !uiState.exportConfig.motionPhoto,
-                                    // Copying the original still and a Motion Photo are exclusive.
-                                    originalImage = uiState.exportConfig.originalImage &&
-                                        uiState.exportConfig.motionPhoto
-                                )
-                            )
-                        },
-                        onToggleMetadata = {
-                            viewModel.updateExportConfig(
-                                uiState.exportConfig.copy(
-                                    preserveMetadata = !uiState.exportConfig.preserveMetadata
-                                )
-                            )
-                        },
-                        onCapture = {
-                            if (uiState.isCapturing || uiState.isExporting) return@PlayerBottomBar
-                            val requiresLegacyWritePermission =
-                                Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
-                                    uiState.customExportTreeUri == null &&
-                                    ContextCompat.checkSelfPermission(
-                                        context,
-                                        Manifest.permission.WRITE_EXTERNAL_STORAGE
-                                    ) != PackageManager.PERMISSION_GRANTED
-                            if (requiresLegacyWritePermission) {
-                                pendingCaptureAfterPermission = true
-                                writePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                                return@PlayerBottomBar
-                            }
-                            runCaptureAndSave()
-                        }
-                    )
-                }
-            },
+            topBar = { if (!sideBySide) playerTopBar() },
+            bottomBar = { if (!sideBySide) playerBottomBar() },
             snackbarHost = { SnackbarHost(snackbarHostState) },
             containerColor = MaterialTheme.colorScheme.background
         ) { paddingValues ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                if (uiState.videoUri != null) {
-                    // Video Player
-                    VideoSurface(
-                        exoPlayer = exoPlayer,
-                        isExporting = uiState.isExporting,
-                        showBufferingIndicator = showBufferingIndicator,
-                        isSliderDragging = isScrubbing,
-                        showCaptureFlash = showCaptureFlash,
-                        onTogglePlayPause = {
-                            if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
-                        },
-                        onCancelExport = { viewModel.cancelExport() },
-                        scrubPreview = {
-                            frameStepPresentation.visiblePreview?.bitmap ?: scrubPreviewState.value
-                        },
-                        overlay = {
-                            if (precisionMode && uiState.videoFrameRate > 0f) {
-                                PrecisionDial(
-                                    settings = appSettings.precisionDial,
-                                    onFrameDelta = { frameSteps.step(it, haptic = false) },
-                                    onAdjustEnd = frameSteps::finish,
-                                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
-                                    enabled = !uiState.isExporting && !uiState.isCapturing,
-                                    sessionKey = uiState.videoUri
+            if (uiState.videoUri != null) {
+                PlayerContentLayout(
+                    sideBySide = sideBySide,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .consumeWindowInsets(paddingValues),
+                    video = {
+                        // Video Player
+                        VideoSurface(
+                            exoPlayer = exoPlayer,
+                            isExporting = uiState.isExporting,
+                            showBufferingIndicator = showBufferingIndicator,
+                            isSliderDragging = isScrubbing,
+                            showCaptureFlash = showCaptureFlash,
+                            onTogglePlayPause = {
+                                if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                            },
+                            onCancelExport = { viewModel.cancelExport() },
+                            scrubPreview = {
+                                frameStepPresentation.visiblePreview?.bitmap ?: scrubPreviewState.value
+                            },
+                            overlay = {
+                                if (precisionMode && uiState.videoFrameRate > 0f) {
+                                    PrecisionDial(
+                                        settings = appSettings.precisionDial,
+                                        onFrameDelta = { frameSteps.step(it, haptic = false) },
+                                        onAdjustEnd = frameSteps::finish,
+                                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
+                                        enabled = !uiState.isExporting && !uiState.isCapturing,
+                                        sessionKey = uiState.videoUri
+                                    )
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                        )
+                    },
+                    controls = {
+                        // In landscape the bars scroll with the controls, leaving the video
+                        // the full inset-safe height, including room for the precision dial.
+                        if (sideBySide) playerTopBar()
+                        // Playback controls with fine scrubbing
+                        PlaybackControls(
+                            exoPlayer = exoPlayer,
+                            currentPositionMs = uiState.currentPositionMs,
+                            durationMs = uiState.durationMs,
+                            isPlaying = uiState.isPlaying,
+                            videoFrameRate = uiState.videoFrameRate,
+                            isExporting = uiState.isExporting,
+                            seekIntervalMs = uiState.seekIntervalMs,
+                            onUpdatePosition = { viewModel.updatePosition(it) },
+                            onTogglePlayPause = {
+                                if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                            },
+                            onSeekTo = { exoPlayer.seekTo(it) },
+                            // Warm the preview decoding session up while the finger is still
+                            // on its way, so the first preview lands as early as possible.
+                            onDragStarted = { viewModel.beginScrubPreview() },
+                            onDragEnded = { /* preview retires when the final seek renders */ },
+                            onScrubStateChanged = { scrubbing, posMs, isFine ->
+                                isScrubbing = scrubbing
+                                scrubPreviewPositionMs = posMs
+                                // Coarse drag wants speed, so it gets the extractor's preview.
+                                // Fine scrub wants the exact frame, which only the real decoder
+                                // can give — drop the preview and let it show through.
+                                if (scrubbing && !isFine) {
+                                    // Moving again — cancel the pending hand-back to the surface.
+                                    awaitingSettledFrame = false
+                                    viewModel.requestScrubPreview(posMs)
+                                } else if (isFine && scrubPreviewState.value != null) {
+                                    viewModel.clearScrubPreview()
+                                }
+                            },
+                            isScrubPreviewLive = { scrubPreviewState.value != null },
+                            onExactSeekIssued = { awaitingSettledFrame = true },
+                            holdToRepeat = appSettings.holdToRepeatEnabled,
+                            repeatSchedule = appSettings.repeatSchedule,
+                            frameSteps = frameSteps,
+                            precisionMode = precisionMode,
+                            onPrecisionModeChange = { checked ->
+                                if (!checked) frameSteps.finish()
+                                precisionMode = checked
+                            }
+                        )
+
+                        // Thumbnail timeline strip
+                        if (uiState.thumbnailCount > 0) {
+                            Surface(
+                                tonalElevation = 2.dp,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                val onThumbnailClick = remember(exoPlayer, viewModel) {
+                                    { index: Int ->
+                                        val state = viewModel.uiState.value
+                                        val denominator =
+                                            (state.thumbnailCount - 1).coerceAtLeast(1)
+                                        val newPosition = (state.durationMs * index) / denominator
+                                        exoPlayer.seekTo(newPosition)
+                                        viewModel.updatePosition(newPosition)
+                                    }
+                                }
+
+                                ThumbnailTimeline(
+                                    thumbnailCount = uiState.thumbnailCount,
+                                    // Passed as a lambda so the position read happens inside
+                                    // ThumbnailTimeline: a scrub then recomposes only the strip
+                                    // instead of this whole Column.
+                                    currentPositionFraction = {
+                                        val durationMs = uiState.durationMs
+                                        if (durationMs > 0) {
+                                            val posMs =
+                                                if (isScrubbing) scrubPreviewPositionMs else uiState.currentPositionMs
+                                            (posMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                                        } else 0f
+                                    },
+                                    isScrubbing = isScrubbing,
+                                    getThumbnail = viewModel::getThumbnail,
+                                    requestThumbnail = viewModel::requestThumbnail,
+                                    onThumbnailClick = onThumbnailClick,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp, vertical = 6.dp)
                                 )
                             }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                    )
-
-                    // Playback controls with fine scrubbing
-                    PlaybackControls(
-                        exoPlayer = exoPlayer,
-                        currentPositionMs = uiState.currentPositionMs,
-                        durationMs = uiState.durationMs,
-                        isPlaying = uiState.isPlaying,
-                        videoFrameRate = uiState.videoFrameRate,
-                        isExporting = uiState.isExporting,
-                        seekIntervalMs = uiState.seekIntervalMs,
-                        onUpdatePosition = { viewModel.updatePosition(it) },
-                        onTogglePlayPause = {
-                            if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
-                        },
-                        onSeekTo = { exoPlayer.seekTo(it) },
-                        // Warm the preview decoding session up while the finger is still
-                        // on its way, so the first preview lands as early as possible.
-                        onDragStarted = { viewModel.beginScrubPreview() },
-                        onDragEnded = { /* preview retires when the final seek renders */ },
-                        onScrubStateChanged = { scrubbing, posMs, isFine ->
-                            isScrubbing = scrubbing
-                            scrubPreviewPositionMs = posMs
-                            // Coarse drag wants speed, so it gets the extractor's preview.
-                            // Fine scrub wants the exact frame, which only the real decoder
-                            // can give — drop the preview and let it show through.
-                            if (scrubbing && !isFine) {
-                                // Moving again — cancel the pending hand-back to the surface.
-                                awaitingSettledFrame = false
-                                viewModel.requestScrubPreview(posMs)
-                            } else if (isFine && scrubPreviewState.value != null) {
-                                viewModel.clearScrubPreview()
-                            }
-                        },
-                        isScrubPreviewLive = { scrubPreviewState.value != null },
-                        onExactSeekIssued = { awaitingSettledFrame = true },
-                        holdToRepeat = appSettings.holdToRepeatEnabled,
-                        repeatSchedule = appSettings.repeatSchedule,
-                        frameSteps = frameSteps,
-                        precisionMode = precisionMode,
-                        onPrecisionModeChange = { checked ->
-                            if (!checked) frameSteps.finish()
-                            precisionMode = checked
                         }
-                    )
 
-                    // Thumbnail timeline strip
-                    if (uiState.thumbnailCount > 0) {
-                        Surface(
-                            tonalElevation = 2.dp,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            val onThumbnailClick = remember(exoPlayer, viewModel) {
-                                { index: Int ->
-                                    val state = viewModel.uiState.value
-                                    val denominator =
-                                        (state.thumbnailCount - 1).coerceAtLeast(1)
-                                    val newPosition = (state.durationMs * index) / denominator
-                                    exoPlayer.seekTo(newPosition)
-                                    viewModel.updatePosition(newPosition)
-                                }
-                            }
-
-                            ThumbnailTimeline(
-                                thumbnailCount = uiState.thumbnailCount,
-                                // Passed as a lambda so the position read happens inside
-                                // ThumbnailTimeline: a scrub then recomposes only the strip
-                                // instead of this whole Column.
-                                currentPositionFraction = {
-                                    val durationMs = uiState.durationMs
-                                    if (durationMs > 0) {
-                                        val posMs =
-                                            if (isScrubbing) scrubPreviewPositionMs else uiState.currentPositionMs
-                                        (posMs.toFloat() / durationMs).coerceIn(0f, 1f)
-                                    } else 0f
-                                },
-                                isScrubbing = isScrubbing,
-                                getThumbnail = viewModel::getThumbnail,
-                                requestThumbnail = viewModel::requestThumbnail,
-                                onThumbnailClick = onThumbnailClick,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 8.dp, vertical = 6.dp)
-                            )
-                        }
+                        // Frame info card
+                        FrameInfoCard(capturedFrame = uiState.capturedFrame)
+                        if (sideBySide) playerBottomBar()
                     }
-
-                    // Frame info card
-                    FrameInfoCard(capturedFrame = uiState.capturedFrame)
-                } else {
-                    EmptyState(
-                        onOpenSystemPicker = onOpenSystemPicker,
-                        onBrowseGallery = onBrowseGallery,
-                        isOpening = uiState.isOpening
-                    )
-                }
+                )
+            } else {
+                EmptyState(
+                    onOpenSystemPicker = onOpenSystemPicker,
+                    onBrowseGallery = onBrowseGallery,
+                    isOpening = uiState.isOpening,
+                    modifier = Modifier.fillMaxSize().padding(paddingValues)
+                )
             }
 
             // Export settings bottom sheet
