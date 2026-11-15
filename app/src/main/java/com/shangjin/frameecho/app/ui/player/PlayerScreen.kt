@@ -1,4 +1,4 @@
-@file:androidx.annotation.OptIn(UnstableApi::class)
+@file:androidx.annotation.OptIn(UnstableApi::class, androidx.media3.common.util.ExperimentalApi::class)
 
 package com.shangjin.frameecho.app.ui.player
 
