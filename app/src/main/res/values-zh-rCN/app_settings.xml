@@ -30,8 +30,8 @@
     <string name="app_settings_error_fps_range">速度必须为每秒 %1$s 到 %2$s 帧。</string>
     <string name="app_settings_error_delay_number">请为等待秒数输入有限数值。</string>
     <string name="app_settings_error_stage_numbers">请在阶段的两个字段中分别输入秒数和每秒帧数。</string>
-    <string name="app_settings_discard_title">放弃计划更改？</string>
-    <string name="app_settings_discard_message">加速计划有未保存的编辑。是否放弃并离开此页面？</string>
+    <string name="app_settings_discard_title">放弃设置更改？</string>
+    <string name="app_settings_discard_message">设置有未保存的编辑。是否放弃并离开此页面？</string>
     <string name="app_settings_discard_changes">放弃更改</string>
     <string name="app_settings_keep_editing">继续编辑</string>
 </resources>
