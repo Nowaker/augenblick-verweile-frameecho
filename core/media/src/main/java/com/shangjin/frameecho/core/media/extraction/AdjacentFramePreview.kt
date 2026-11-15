@@ -158,12 +158,12 @@ class AdjacentFramePreview(
             if (!frameRate.isFinite() || frameRate <= 0f || durationMs <= 0L) return emptyList()
             val currentIndex = (positionMs.toDouble() * frameRate / 1_000.0).roundToLong()
             val endUs = durationMs * 1_000L
-            // Round frame indices back to milliseconds exactly as the player does.
+            // Floor frame indices to milliseconds exactly as the player seeks.
             // Repeatedly adding a truncated 33 ms at 29.97 fps would miss cache keys.
             return listOf(1, 2, 3, 4, -1, -2).mapNotNull { offset ->
                 val index = currentIndex + offset * direction
                 if (index < 0L) return@mapNotNull null
-                val timestampUs = (index * 1_000.0 / frameRate).roundToLong() * 1_000L
+                val timestampUs = (index * 1_000.0 / frameRate).toLong() * 1_000L
                 timestampUs.takeIf { it in 0L until endUs && it != positionMs * 1_000L }
             }.distinct()
         }

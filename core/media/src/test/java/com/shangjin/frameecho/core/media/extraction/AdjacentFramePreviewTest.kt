@@ -156,9 +156,9 @@ class AdjacentFramePreviewTest {
     }
 
     @Test
-    fun `fractional frame rates use rounded absolute frame positions`() {
+    fun `fractional frame rates preload the floored player seek positions`() {
         assertEquals(
-            listOf(67_000L, 100_000L, 133_000L, 167_000L, 0L),
+            listOf(66_000L, 100_000L, 133_000L, 166_000L, 0L),
             AdjacentFramePreview.adjacentTimestampsUs(33L, 29.97f, 1_000L, 1)
         )
     }
