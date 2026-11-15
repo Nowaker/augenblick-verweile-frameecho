@@ -28,6 +28,7 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+    sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("test-fixtures/media"))
 }
 
 dependencies {
