@@ -35,7 +35,7 @@ internal class FrameStepPresentation(player: ExoPlayer, viewModel: PlayerViewMod
                 overlayMs = targetMs
                 viewModel.requestFramePreview(targetMs)
             }
-            if (haptic) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            if (haptic) haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
         }
         override fun onFinished(targetMs: Long, seekIssued: Boolean) {
             holding = false

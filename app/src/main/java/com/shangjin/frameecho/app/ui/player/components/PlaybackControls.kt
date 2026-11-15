@@ -269,7 +269,7 @@ fun PlaybackControls(
                                     } else anchorMs
                                 } else if (gestureFineScrubbing && !currentPrecisionMode.value && verticalOffset < fineScrubThresholdPx / 2) {
                                     gestureFineScrubbing = false
-                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.ContextClick)
                                     // Re-anchor normal drag from current position
                                     val currentTarget = sliderTargetPositionMs ?: currentPositionMs
                                     localSliderFraction = if (durationMs > 0) {
@@ -333,7 +333,7 @@ fun PlaybackControls(
                         if (isFineScrubbing && frameDurationMs > 0L) {
                             val currentFrameBoundary = (newPosition / frameDurationMs) * frameDurationMs
                             if (currentFrameBoundary != lastFrameBoundaryMs) {
-                                hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.ContextClick)
                                 lastFrameBoundaryMs = currentFrameBoundary
                             }
                         }

@@ -202,7 +202,7 @@ fun PrecisionDial(
                             val position = change.position - center
                             val step = controller.moveGesture(position.x, position.y, currentFramesPerTurn) ?: break
                             if (step.frames != 0) currentOnFrameDelta(step.frames)
-                            if (step.revolutionsCompleted > 0) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            if (step.revolutionsCompleted > 0) haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                         }
                     } finally {
                         finishGesture()
