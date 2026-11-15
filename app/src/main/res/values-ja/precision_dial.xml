@@ -4,7 +4,7 @@
     <string name="precision_dial_label">精密コマ送りダイヤル。時計回りで次のフレーム、反時計回りで前のフレームへ移動します。</string>
     <string name="precision_dial_toggle">精密ダイヤル</string>
     <string name="precision_dial_settings_title">精密ダイヤル</string>
-    <string name="precision_dial_settings_hint">ダイヤルを時計回りに回すとコマ送り、反時計回りに回すとコマ戻しになります。回転数に制限はありません。すべての項目が有効になると自動で保存されます。</string>
+    <string name="precision_dial_settings_hint">ダイヤルを時計回りに回すとコマ送り、反時計回りに回すとコマ戻しになります。回転数に制限はありません。「ダイヤル設定を保存」で有効な編集を適用します。</string>
     <string name="precision_dial_frames_per_turn">1 回転あたりのフレーム数</string>
     <string name="precision_dial_initial_opacity">最初のガイドの不透明度</string>
     <string name="precision_dial_resting_opacity">回転後のガイドの不透明度</string>
@@ -27,4 +27,7 @@
     <string name="precision_dial_color_pink">ピンク</string>
     <string name="precision_dial_unsaved">未保存：強調表示された項目を修正してください。</string>
     <string name="precision_dial_reset">既定値に戻す</string>
+    <string name="precision_dial_save">ダイヤル設定を保存</string>
+    <string name="precision_dial_saved">ダイヤル設定は保存済みです</string>
+    <string name="precision_dial_changes_unsaved">未保存のダイヤル設定</string>
 </resources>

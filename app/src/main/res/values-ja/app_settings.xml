@@ -31,7 +31,7 @@
     <string name="app_settings_error_delay_number">待ち時間の秒数を有限の数値で入力してください。</string>
     <string name="app_settings_error_stage_numbers">段階の両方の欄に、秒数と毎秒のフレーム数を数値で入力してください。</string>
     <string name="app_settings_discard_title">変更を破棄しますか?</string>
-    <string name="app_settings_discard_message">加速スケジュールに未保存の編集があります。破棄してこの画面を離れますか?</string>
+    <string name="app_settings_discard_message">設定に未保存の編集があります。破棄してこの画面を離れますか?</string>
     <string name="app_settings_discard_changes">変更を破棄</string>
     <string name="app_settings_keep_editing">編集を続ける</string>
 </resources>
