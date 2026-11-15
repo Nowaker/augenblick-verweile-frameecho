@@ -179,6 +179,7 @@ class PlayerSourceWiringTest {
 
         val previewState = vm.uiState.value
         val previewName = ExportFileName.generate(previewState.previewFrame!!, previewState.effectiveExportConfig, exportTimestampMs = 1L)
+        vm.onPausedAtFrame(1_500_000L)
 
         val frameSlot = slot<CapturedFrame>()
         val configSlot = slot<ExportConfig>()

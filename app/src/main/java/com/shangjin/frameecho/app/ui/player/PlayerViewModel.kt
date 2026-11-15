@@ -580,7 +580,7 @@ class PlayerViewModel : ViewModel() {
             it.copy(
                 currentPositionMs = (presentationUs + 500L) / 1000L,
                 displayedFrameUs = presentationUs,
-                fileNameTimestampMs = clock()
+                fileNameTimestampMs = if (it.displayedFrameUs == presentationUs) it.fileNameTimestampMs else clock()
             )
         }
     }
