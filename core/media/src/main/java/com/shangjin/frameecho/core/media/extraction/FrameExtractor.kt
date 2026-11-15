@@ -20,8 +20,8 @@ import kotlin.math.roundToInt
 /**
  * High-performance video frame extraction engine.
  *
- * Uses MediaMetadataRetriever for precise frame extraction with:
- * - Exact frame seeking (always OPTION_CLOSEST — precision is non-negotiable)
+ * Uses reference-aware Media3 decoding for full-resolution captures with:
+ * - Exact frame seeking and actual decoded presentation timestamps
  * - HDR frame capture support
  * - Proper color space handling
  * - Original resolution preservation
@@ -71,7 +71,7 @@ class FrameExtractor(
         null,
         "Failed to extract frame at $timestampUs"
     ) { retriever ->
-        extractFrameInternal(retriever, timestampUs)
+        decodeExactFrame(context, videoUri, timestampUs).bitmap
     }
 
     /**
@@ -92,7 +92,8 @@ class FrameExtractor(
         "Failed to extract frame with info"
     ) { retriever ->
         val sampleTimestampUs = frameTimestamps.nearest(videoUri, timestampUs)
-        val bitmap = extractFrameInternal(retriever, sampleTimestampUs) ?: return@useRetriever null
+        val decoded = decodeExactFrame(context, videoUri, sampleTimestampUs)
+        val bitmap = decoded.bitmap
 
         val cacheKey = videoUri.toString()
 
@@ -128,7 +129,7 @@ class FrameExtractor(
         }
 
         val frame = CapturedFrame(
-            timestampUs = sampleTimestampUs,
+            timestampUs = decoded.presentationTimeUs,
             width = bitmap.width,
             height = bitmap.height,
             colorSpace = colorSpace!!,
@@ -264,19 +265,6 @@ class FrameExtractor(
                 LogUtils.w(context, "FrameExtractor", "Failed to release retriever", e)
             }
         }
-    }
-
-    /**
-     * Internal frame extraction — always uses OPTION_CLOSEST for maximum precision.
-     */
-    private fun extractFrameInternal(
-        retriever: MediaMetadataRetriever,
-        timestampUs: Long
-    ): Bitmap? {
-        return retriever.getFrameAtTime(
-            timestampUs,
-            MediaMetadataRetriever.OPTION_CLOSEST
-        )
     }
 
     /**
