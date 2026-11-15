@@ -24,12 +24,14 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -43,14 +45,15 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.media3.common.C
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.ScrubbingModeParameters
 import androidx.media3.exoplayer.SeekParameters
 import com.shangjin.frameecho.R
 import com.shangjin.frameecho.app.ui.components.TooltipWrapper
 import com.shangjin.frameecho.app.ui.player.framestep.FrameStepMath
 import com.shangjin.frameecho.app.ui.player.framestep.FrameStepRepeatSchedule
+import com.shangjin.frameecho.app.ui.player.framestep.FrameStepState
+import com.shangjin.frameecho.app.ui.player.framestep.enterScrubbingMode
+import com.shangjin.frameecho.app.ui.player.precision.PrecisionDialToggle
 import com.shangjin.frameecho.core.common.FileUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -119,23 +122,9 @@ fun PlaybackControls(
     /** Whether holding a frame-step button keeps stepping along [repeatSchedule]. */
     holdToRepeat: Boolean = true,
     repeatSchedule: FrameStepRepeatSchedule = FrameStepRepeatSchedule.DEFAULT,
-    /**
-     * Whether the adjacent-frame preview is decoding for this video. While it is, held
-     * repeats are shown by the preview alone and the player is seeked only once, on
-     * release; otherwise every repeat seeks the player.
-     */
-    isFrameStepPreviewAvailable: () -> Boolean = { false },
-    /**
-     * Called for every frame step with the position stepped to, and whether it moved
-     * (false when clamped at either end of the clip). Lets the caller request the
-     * decoded preview of exactly that frame.
-     */
-    onFrameStep: (targetMs: Long, moved: Boolean) -> Unit = { _, _ -> },
-    /**
-     * Called when a press or hold of a frame-step button ends, with the final position
-     * and whether a final exact seek was issued to settle the player there.
-     */
-    onFrameStepEnded: (finalMs: Long, seekIssued: Boolean) -> Unit = { _, _ -> },
+    frameSteps: FrameStepState,
+    precisionMode: Boolean,
+    onPrecisionModeChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val hapticFeedback = LocalHapticFeedback.current
@@ -146,7 +135,9 @@ fun PlaybackControls(
 
     // Slider user-dragging state
     var isSliderDragging by remember { mutableStateOf(false) }
-    var isFineScrubbing by remember { mutableStateOf(false) }
+    var gestureFineScrubbing by remember { mutableStateOf(false) }
+    val currentPrecisionMode = rememberUpdatedState(precisionMode)
+    val isFineScrubbing by remember { derivedStateOf { currentPrecisionMode.value || gestureFineScrubbing } }
     var sliderDragStartFraction by remember { mutableFloatStateOf(0f) }
     var sliderDragStartPositionMs by remember { mutableLongStateOf(0L) }
     var wasPlayingBeforeSliderDrag by remember { mutableStateOf(false) }
@@ -184,65 +175,12 @@ fun PlaybackControls(
 
     val previewPositionMs = sliderTargetPositionMs ?: currentPositionMs
 
-    // Frame stepping. The target is tracked here rather than read back from the player,
-    // because during a hold the player is not seeked on every step, and when it is, it
-    // is still catching up with earlier seeks while the next step is already due.
-    var frameStepTargetMs by remember { mutableStateOf<Long?>(null) }
-    // Where the player was last told to be during this press.
-    var frameStepPlayerMs by remember { mutableStateOf<Long?>(null) }
-    var frameStepInScrubbingMode by remember { mutableStateOf(false) }
-    var frameStepFeedbackMs by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(frameStepTargetMs, frameStepFeedbackMs) {
-        if (frameStepTargetMs == null && frameStepFeedbackMs != null) {
+    val frameStepFeedbackMs = frameSteps.feedbackMs
+    LaunchedEffect(frameSteps.targetMs, frameStepFeedbackMs) {
+        if (frameSteps.targetMs == null && frameStepFeedbackMs != null) {
             delay(FRAME_STEP_FEEDBACK_LINGER_MS)
-            frameStepFeedbackMs = null
+            frameSteps.clearFeedback()
         }
-    }
-
-    fun stepFrames(direction: Int, frames: Int) {
-        val isRepeat = frameStepTargetMs != null
-        val baseMs = frameStepTargetMs ?: exoPlayer.currentPosition
-        if (!isRepeat) frameStepPlayerMs = baseMs
-        if (exoPlayer.isPlaying) exoPlayer.pause()
-        val targetMs = FrameStepMath.steppedPositionMs(baseMs, videoFrameRate, direction * frames, durationMs)
-        frameStepTargetMs = targetMs
-        frameStepFeedbackMs = targetMs
-        val moved = targetMs != baseMs
-        if (moved) {
-            // A tap always seeks, so a single step settles exactly. Repeats are drawn by
-            // the adjacent-frame preview: seeking the player too would have two decoders
-            // fight over every step, and the picture would trail the readout.
-            if (!isRepeat || !isFrameStepPreviewAvailable()) {
-                // Without a preview, repeats seek many times a second: scrubbing mode lets
-                // Media3 drop seeks a newer one has already superseded.
-                if (isRepeat && !frameStepInScrubbingMode) {
-                    exoPlayer.enterScrubbingMode()
-                    frameStepInScrubbingMode = true
-                }
-                exoPlayer.setSeekParameters(SeekParameters.EXACT)
-                exoPlayer.seekTo(targetMs)
-                frameStepPlayerMs = targetMs
-            }
-            onUpdatePosition(targetMs)
-            hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        }
-        onFrameStep(targetMs, moved)
-    }
-
-    fun endFrameStep() {
-        val targetMs = frameStepTargetMs ?: return
-        frameStepTargetMs = null
-        val needsFinalSeek = frameStepInScrubbingMode || frameStepPlayerMs != targetMs
-        frameStepPlayerMs = null
-        if (frameStepInScrubbingMode) {
-            frameStepInScrubbingMode = false
-            exoPlayer.setScrubbingModeEnabled(false)
-        }
-        if (needsFinalSeek) {
-            exoPlayer.setSeekParameters(SeekParameters.EXACT)
-            exoPlayer.seekTo(targetMs)
-        }
-        onFrameStepEnded(targetMs, needsFinalSeek)
     }
     // Track last frame boundary for haptic feedback on frame crossings
     var lastFrameBoundaryMs by remember { mutableLongStateOf(0L) }
@@ -298,10 +236,16 @@ fun PlaybackControls(
                 .padding(horizontal = 16.dp)
         ) {
             // Seek slider with real-time preview and fine scrubbing
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            PrecisionDialToggle(
+                checked = precisionMode,
+                onCheckedChange = onPrecisionModeChange,
+                enabled = !isExporting && frameDurationMs > 0L && !isSliderDragging
+            )
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .pointerInput(Unit) {
+                    .weight(1f)
+                    .pointerInput(frameSteps) {
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
                             val startY = down.position.y
@@ -310,7 +254,7 @@ fun PlaybackControls(
                                 val change = event.changes.firstOrNull() ?: break
                                 val verticalOffset = startY - change.position.y
                                 if (!isFineScrubbing && verticalOffset > fineScrubThresholdPx) {
-                                    isFineScrubbing = true
+                                    gestureFineScrubbing = true
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                     // Anchor from current target so thumb doesn't jump
                                     val anchorMs = sliderTargetPositionMs ?: currentPositionMs
@@ -323,8 +267,8 @@ fun PlaybackControls(
                                     lastFrameBoundaryMs = if (frameDurationMs > 0L) {
                                         (anchorMs / frameDurationMs) * frameDurationMs
                                     } else anchorMs
-                                } else if (isFineScrubbing && verticalOffset < fineScrubThresholdPx / 2) {
-                                    isFineScrubbing = false
+                                } else if (gestureFineScrubbing && !currentPrecisionMode.value && verticalOffset < fineScrubThresholdPx / 2) {
+                                    gestureFineScrubbing = false
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     // Re-anchor normal drag from current position
                                     val currentTarget = sliderTargetPositionMs ?: currentPositionMs
@@ -337,7 +281,7 @@ fun PlaybackControls(
                                 }
                             }
                             if (!isSliderDragging && isFineScrubbing) {
-                                isFineScrubbing = false
+                                gestureFineScrubbing = false
                             }
                         }
                     }
@@ -408,7 +352,7 @@ fun PlaybackControls(
                         exoPlayer.seekTo(finalPosition)
                         onExactSeekIssued()
                         isSliderDragging = false
-                        isFineScrubbing = false
+                        gestureFineScrubbing = false
                         fineScrubOffsetMs = 0L
                         sliderTargetPositionMs = null
                         onScrubStateChanged(false, finalPosition, false)
@@ -484,7 +428,9 @@ fun PlaybackControls(
                                 }
                             )
                             Text(
-                                text = if (isFineScrubbing) {
+                                text = if (precisionMode) {
+                                    stringResource(R.string.precision_dial_exit_hint)
+                                } else if (isFineScrubbing) {
                                     stringResource(R.string.swipe_down_exit_fine_scrub)
                                 } else {
                                     stringResource(R.string.swipe_up_fine_scrub)
@@ -525,6 +471,7 @@ fun PlaybackControls(
                 }
             }
 
+            }
             // Time labels + play controls
             Row(
                 modifier = Modifier
@@ -557,8 +504,8 @@ fun PlaybackControls(
                             enabled = !isExporting,
                             holdToRepeat = holdToRepeat,
                             schedule = repeatSchedule,
-                            onStep = { frames -> stepFrames(-1, frames) },
-                            onHoldEnd = { endFrameStep() }
+                            onStep = { frames -> frameSteps.step(-frames) },
+                            onHoldEnd = frameSteps::finish
                         ) {
                             Text(
                                 text = "‹‹",
@@ -630,8 +577,8 @@ fun PlaybackControls(
                             enabled = !isExporting,
                             holdToRepeat = holdToRepeat,
                             schedule = repeatSchedule,
-                            onStep = { frames -> stepFrames(1, frames) },
-                            onHoldEnd = { endFrameStep() }
+                            onStep = { frames -> frameSteps.step(frames) },
+                            onHoldEnd = frameSteps::finish
                         ) {
                             Text(
                                 text = "››",
@@ -650,27 +597,6 @@ fun PlaybackControls(
             }
         }
     }
-}
-
-/**
- * Media3 scrubbing mode (1.8+), used while dragging the slider and while a frame-step
- * button repeats. Every flag is spelled out rather than relying on the library defaults,
- * so a future Media3 release can't quietly turn one of them off. Fractional seek
- * tolerance is deliberately left unset: it would override the SeekParameters chosen by
- * the callers.
- */
-private fun ExoPlayer.enterScrubbingMode() {
-    setScrubbingModeParameters(
-        ScrubbingModeParameters.Builder()
-            .setDisabledTrackTypes(setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_METADATA))
-            .setShouldIncreaseCodecOperatingRate(true)
-            .setShouldEnableDynamicScheduling(true)
-            .setAllowSkippingMediaCodecFlush(true)
-            .setAllowSkippingKeyFrameReset(true)
-            .setUseDecodeOnlyFlag(true)
-            .build()
-    )
-    setScrubbingModeEnabled(true)
 }
 
 /**

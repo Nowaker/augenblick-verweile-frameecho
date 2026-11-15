@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="precision_dial_exit_hint">关闭精细转盘以退出微调模式</string>
     <string name="precision_dial_label">精确逐帧转盘。顺时针转动前进，逆时针转动后退。</string>
     <string name="precision_dial_toggle">精确转盘</string>
     <string name="precision_dial_settings_title">精确转盘</string>

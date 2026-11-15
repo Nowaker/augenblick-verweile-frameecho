@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="precision_dial_exit_hint">精密ダイヤルをオフにして微調整モードを終了</string>
     <string name="precision_dial_label">精密コマ送りダイヤル。時計回りで次のフレーム、反時計回りで前のフレームへ移動します。</string>
     <string name="precision_dial_toggle">精密ダイヤル</string>
     <string name="precision_dial_settings_title">精密ダイヤル</string>

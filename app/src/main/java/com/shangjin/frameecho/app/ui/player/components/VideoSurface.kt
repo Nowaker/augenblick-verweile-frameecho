@@ -21,6 +21,7 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -126,6 +127,7 @@ fun VideoSurface(
      * composable that draws it, rather than recomposing this whole surface.
      */
     scrubPreview: () -> Bitmap? = { null },
+    overlay: @Composable BoxScope.() -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Zoom and pan state
@@ -156,24 +158,13 @@ fun VideoSurface(
 
     val currentOnTogglePlayPause by rememberUpdatedState(onTogglePlayPause)
     val currentExoPlayer by rememberUpdatedState(exoPlayer)
+    val currentIsExporting by rememberUpdatedState(isExporting)
 
     // Reset zoom when video changes (parent re-creates this composable)
-    Box(modifier = modifier) {
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = exoPlayer
-                    useController = false
-                    controllerAutoShow = false
-                    setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
-                    setOnClickListener(null)
-                }
-            },
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
+    Box(modifier = modifier.pointerInput(Unit) {
                     awaitEachGesture {
-                        val firstDown = awaitFirstDown(requireUnconsumed = false)
+                        val firstDown = awaitFirstDown()
+                        if (currentIsExporting) return@awaitEachGesture
                         var pastTouchSlop = false
                         var isTap = true
                         var hasMultiTouch = false
@@ -249,7 +240,18 @@ fun VideoSurface(
                             }
                         }
                     }
+                }) {
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    player = exoPlayer
+                    useController = false
+                    controllerAutoShow = false
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                    setOnClickListener(null)
                 }
+            },
+            modifier = Modifier.fillMaxSize()
                 // ⚡ Bolt: Use lambda-based graphicsLayer to defer state reading to the draw phase.
                 // This prevents expensive full recompositions of the VideoSurface during
                 // high-frequency gesture events like panning and zooming.
@@ -415,5 +417,6 @@ fun VideoSurface(
                 }
             }
         }
+        overlay()
     }
 }

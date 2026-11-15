@@ -2,6 +2,7 @@
 <resources>
     <string name="precision_dial_label">Precision frame dial. Turn clockwise for next frames, counterclockwise for previous frames.</string>
     <string name="precision_dial_toggle">Precision dial</string>
+    <string name="precision_dial_exit_hint">Turn off Precision dial to leave fine mode</string>
     <string name="precision_dial_settings_title">Precision dial</string>
     <string name="precision_dial_settings_hint">Turn the dial clockwise to step forward and counterclockwise to step back, as many turns as you like. Changes are saved once every field is valid.</string>
     <string name="precision_dial_frames_per_turn">Frames per full turn</string>

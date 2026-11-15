@@ -36,11 +36,10 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
-import android.graphics.Bitmap
-import com.shangjin.frameecho.app.ui.player.framestep.FrameStepMath
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
@@ -79,6 +78,8 @@ import com.shangjin.frameecho.app.ui.player.components.PlaybackControls
 import com.shangjin.frameecho.app.ui.player.components.PlayerBottomBar
 import com.shangjin.frameecho.app.ui.player.components.PlayerTopBar
 import com.shangjin.frameecho.app.ui.player.components.VideoSurface
+import com.shangjin.frameecho.app.ui.player.framestep.rememberFrameStepPresentation
+import com.shangjin.frameecho.app.ui.player.precision.PrecisionDial
 import com.shangjin.frameecho.core.model.ExportResult
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -217,40 +218,10 @@ fun PlayerScreen(
         }
     }
 
-    // Frame-step overlay. While stepping, the decoded preview of the frame being stepped
-    // to covers the surface; during a hold it is the only thing drawing the steps. It stays
-    // until the player reports that the frame on screen is the final target. There is
-    // deliberately no timeout and no "first frame rendered" shortcut: a seek issued before
-    // the hold can still render late, and retiring on it would flash a frame the user has
-    // already left. Playback and video changes clear it as well.
-    val framePreviewState = viewModel.framePreview.collectAsStateWithLifecycle()
-    var frameStepHolding by remember { mutableStateOf(false) }
-    var frameStepOverlayMs by remember { mutableStateOf<Long?>(null) }
-    // The last preview that was the stepping target when it arrived. Kept while the next
-    // target is still decoding, so the overlay never falls back to the stale player frame.
-    var frameStepShownPreview by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(uiState.videoUri) {
-        frameStepHolding = false
-        frameStepOverlayMs = null
-    }
-    LaunchedEffect(Unit) {
-        snapshotFlow { framePreviewState.value to frameStepOverlayMs }.collect { (preview, targetMs) ->
-            when {
-                targetMs == null -> frameStepShownPreview = null
-                preview != null && preview.positionMs == targetMs -> frameStepShownPreview = preview.bitmap
-            }
-        }
-    }
-    LaunchedEffect(uiState.displayedFrameUs, frameStepHolding, frameStepOverlayMs, uiState.videoFrameRate) {
-        val targetMs = frameStepOverlayMs ?: return@LaunchedEffect
-        val displayedUs = uiState.displayedFrameUs ?: return@LaunchedEffect
-        val rate = uiState.videoFrameRate
-        if (!frameStepHolding && rate > 0f &&
-            FrameStepMath.frameIndexAt((displayedUs + 500L) / 1000L, rate) == FrameStepMath.frameIndexAt(targetMs, rate)
-        ) {
-            frameStepOverlayMs = null
-        }
-    }
+    val frameStepPresentation = rememberFrameStepPresentation(exoPlayer, viewModel, uiState)
+    val currentFrameStepPresentation by rememberUpdatedState(frameStepPresentation)
+    val frameSteps = frameStepPresentation.steps
+    var precisionMode by rememberSaveable(uiState.videoUri?.toString()) { mutableStateOf(false) }
 
     // Capture flash effect
     var showCaptureFlash by remember { mutableStateOf(false) }
@@ -261,7 +232,7 @@ fun PlayerScreen(
         } else {
             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
             exoPlayer.pause()
-            viewModel.updatePosition(exoPlayer.currentPosition)
+            viewModel.onPausedAtFrame(frameStepPresentation.visiblePreview?.presentationTimeUs ?: uiState.displayedFrameUs ?: exoPlayer.currentPosition * 1_000L)
             viewModel.captureAndSave(uiState.exportConfig.motionPhoto)
         }
     })
@@ -377,7 +348,7 @@ fun PlayerScreen(
                 playingForFrameMetadata.set(isPlaying)
                 viewModel.setPlaying(isPlaying)
                 if (isPlaying) {
-                    frameStepOverlayMs = null
+                    currentFrameStepPresentation.clear()
                 } else if (!isScrubbing) {
                     // Paused: the frame on screen is the selection, not the playback clock.
                     val renderedUs = lastRenderedFrameUs.get()
@@ -615,7 +586,19 @@ fun PlayerScreen(
                         },
                         onCancelExport = { viewModel.cancelExport() },
                         scrubPreview = {
-                            frameStepShownPreview?.takeIf { frameStepOverlayMs != null } ?: scrubPreviewState.value
+                            frameStepPresentation.visiblePreview?.bitmap ?: scrubPreviewState.value
+                        },
+                        overlay = {
+                            if (precisionMode && uiState.videoFrameRate > 0f) {
+                                PrecisionDial(
+                                    settings = appSettings.precisionDial,
+                                    onFrameDelta = { frameSteps.step(it, haptic = false) },
+                                    onAdjustEnd = frameSteps::finish,
+                                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
+                                    enabled = !uiState.isExporting && !uiState.isCapturing,
+                                    sessionKey = uiState.videoUri
+                                )
+                            }
                         },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -659,20 +642,11 @@ fun PlayerScreen(
                         onExactSeekIssued = { awaitingSettledFrame = true },
                         holdToRepeat = appSettings.holdToRepeatEnabled,
                         repeatSchedule = appSettings.repeatSchedule,
-                        isFrameStepPreviewAvailable = { viewModel.isFramePreviewWorking },
-                        onFrameStep = { targetMs, moved ->
-                            frameStepHolding = true
-                            if (moved) {
-                                frameStepOverlayMs = targetMs
-                                viewModel.requestFramePreview(targetMs)
-                            }
-                        },
-                        onFrameStepEnded = { finalMs, _ ->
-                            // The overlay retires once the player displays this frame (see
-                            // the displayedFrameUs effect above); nothing to wait for if
-                            // the press never moved.
-                            frameStepHolding = false
-                            if (frameStepOverlayMs != finalMs) frameStepOverlayMs = null
+                        frameSteps = frameSteps,
+                        precisionMode = precisionMode,
+                        onPrecisionModeChange = { checked ->
+                            if (!checked) frameSteps.finish()
+                            precisionMode = checked
                         }
                     )
 
