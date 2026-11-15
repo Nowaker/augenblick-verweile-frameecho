@@ -209,6 +209,7 @@ fun FrameEchoNavHost(incoming: IncomingMediaViewModel, openedWithMedia: Boolean)
                 onStartScreenChange = { scope.launch { settingsStore.setStartScreen(it) } },
                 onHoldToRepeatEnabledChange = { scope.launch { settingsStore.setHoldToRepeatEnabled(it) } },
                 onRepeatScheduleChange = { scope.launch { settingsStore.setRepeatSchedule(it) } },
+                onPrecisionDialChange = { scope.launch { settingsStore.setPrecisionDialSettings(it) } },
                 onNavigateToAbout = { navController.navigateSingleTop(Screen.About.route) },
                 onNavigateBack = { navController.popBackStack() }
             )

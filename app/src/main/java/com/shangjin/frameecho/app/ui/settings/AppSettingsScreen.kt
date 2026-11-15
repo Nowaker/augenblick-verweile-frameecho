@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.shangjin.frameecho.R
 import com.shangjin.frameecho.app.settings.AppSettings
 import com.shangjin.frameecho.app.settings.StartScreen
+import com.shangjin.frameecho.app.settings.PrecisionDialSettings
 import com.shangjin.frameecho.app.ui.components.TooltipWrapper
 import com.shangjin.frameecho.app.ui.player.framestep.FrameStepRepeatSchedule
 import com.shangjin.frameecho.app.ui.player.framestep.ScheduleDraft
@@ -46,6 +47,7 @@ fun AppSettingsScreen(
     onStartScreenChange: (StartScreen) -> Unit,
     onHoldToRepeatEnabledChange: (Boolean) -> Unit,
     onRepeatScheduleChange: (FrameStepRepeatSchedule) -> Unit,
+    onPrecisionDialChange: (PrecisionDialSettings) -> Unit,
     onNavigateToAbout: () -> Unit,
     onNavigateBack: () -> Unit
 ) {
@@ -103,6 +105,8 @@ fun AppSettingsScreen(
                 onRepeatScheduleChange(schedule)
                 draft = ScheduleDraft.from(schedule)
             }
+            HorizontalDivider()
+            PrecisionDialSettingsSection(settings.precisionDial, onPrecisionDialChange)
             HorizontalDivider()
             SettingsAboutRow { requestNavigation(SettingsDestination.ABOUT) }
         }
