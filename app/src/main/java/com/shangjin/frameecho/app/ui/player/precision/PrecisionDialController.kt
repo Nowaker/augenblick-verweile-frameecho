@@ -65,6 +65,12 @@ internal class PrecisionDialController {
     /** True when keys moved frames since the last call, so the caller must settle. */
     fun endKeySteps(): Boolean = keyMovedFrames.also { keyMovedFrames = false }
 
+    fun endAdjustment(): Boolean {
+        val pointerMoved = endGesture()
+        val keyMoved = endKeySteps()
+        return pointerMoved || keyMoved
+    }
+
     fun returnElapsed(generation: Long) {
         guide = guide.returnElapsed(generation)
     }

@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -96,6 +97,10 @@ fun PrecisionDial(
         if (controller.endGesture()) currentOnAdjustEnd()
     }
 
+    fun finishAdjustment() {
+        if (controller.endAdjustment()) currentOnAdjustEnd()
+    }
+
     fun stepOnce(direction: Int) {
         controller.stepByKey(direction, currentFramesPerTurn)
         currentOnFrameDelta(direction)
@@ -109,8 +114,7 @@ fun PrecisionDial(
 
     LaunchedEffect(controller, enabled) {
         if (!enabled) {
-            finishGesture()
-            if (controller.endKeySteps()) currentOnAdjustEnd()
+            finishAdjustment()
         }
     }
 
@@ -125,12 +129,12 @@ fun PrecisionDial(
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(controller, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE) finishGesture()
+            if (event == Lifecycle.Event.ON_PAUSE) finishAdjustment()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            finishGesture()
+            finishAdjustment()
         }
     }
 
@@ -173,6 +177,7 @@ fun PrecisionDial(
                 }
                 true
             }
+            .onFocusChanged { if (!it.hasFocus) finishAdjustment() }
             .focusable(enabled, interactionSource)
             .indication(interactionSource, ripple(bounded = false, radius = PrecisionDialDiameter / 2))
             .pointerInput(controller) {
